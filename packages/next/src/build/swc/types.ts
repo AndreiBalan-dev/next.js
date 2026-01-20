@@ -192,6 +192,21 @@ interface PartialUpdate extends BaseUpdate {
 
 export type Update = IssuesUpdate | PartialUpdate
 
+export interface ServerHmrUpdate {
+  type: 'partial'
+  instruction?: {
+    type: 'ChunkListUpdate'
+    merged?: Array<{
+      type: 'EcmascriptMergedUpdate'
+      entries: Record<
+        string,
+        { code: string; url: string; map?: string | undefined }
+      >
+      chunks?: Record<string, { type: 'partial' }>
+    }>
+  }
+}
+
 export interface HmrIdentifiers {
   identifiers: string[]
 }
@@ -248,6 +263,14 @@ export interface Project {
   ): AsyncIterableIterator<TurbopackResult<Update>>
 
   clientHmrIdentifiersSubscribe(): AsyncIterableIterator<
+    TurbopackResult<HmrIdentifiers>
+  >
+
+  serverHmrEvents(
+    identifier: string
+  ): AsyncIterableIterator<TurbopackResult<Update>>
+
+  serverHmrIdentifiersSubscribe(): AsyncIterableIterator<
     TurbopackResult<HmrIdentifiers>
   >
 
