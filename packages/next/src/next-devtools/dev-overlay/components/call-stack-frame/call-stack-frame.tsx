@@ -33,16 +33,6 @@ export const CallStackFrame: React.FC<{
     }
   }, [onSelect, index])
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
-        e.preventDefault()
-        onSelect(index)
-      }
-    },
-    [onSelect, index]
-  )
-
   // Formatted file source could be empty. e.g. <anonymous> will be formatted to empty string,
   // we'll skip rendering the frame in this case.
   const fileSource = getFrameSource(f)
@@ -60,10 +50,6 @@ export const CallStackFrame: React.FC<{
       data-nextjs-call-stack-frame-selected={isSelected}
       data-nextjs-call-stack-frame-selectable={isSelectable}
       onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      tabIndex={isSelectable ? 0 : undefined}
-      role={isSelectable ? 'button' : undefined}
-      aria-pressed={isSelectable ? isSelected : undefined}
     >
       <div className="call-stack-frame-method-name">
         <HotlinkedText text={f.methodName} />
@@ -144,11 +130,6 @@ export const CALL_STACK_FRAME_STYLES = `
 
   [data-nextjs-call-stack-frame-selected="true"] {
     background-color: var(--color-gray-200);
-  }
-
-  [data-nextjs-call-stack-frame-selectable="true"]:focus-visible {
-    outline: var(--focus-ring);
-    outline-offset: -2px;
   }
 
   .call-stack-frame-method-name {

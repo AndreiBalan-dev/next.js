@@ -1,29 +1,8 @@
 import type { OriginalStackFrame } from '../../../shared/stack-frame'
 
-import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { CallStackFrame } from '../call-stack-frame/call-stack-frame'
 import { ChevronUpDownIcon } from '../../icons/chevron-up-down'
 import { css } from '../../utils/css'
-import { getActiveElement } from '../errors/dev-tools-indicator/utils'
-
-function isFocusedOnInteractiveElement(
-  containerRef: React.RefObject<HTMLElement | null>
-) {
-  const el = getActiveElement(containerRef.current)
-
-  if (!el) return false
-
-  if (
-    el.contentEditable === 'true' ||
-    el.tagName === 'INPUT' ||
-    el.tagName === 'TEXTAREA' ||
-    el.tagName === 'SELECT'
-  ) {
-    return true
-  }
-
-  return false
-}
 
 export function CallStack({
   frames,
@@ -40,80 +19,8 @@ export function CallStack({
   selectedFrameIndex: number | null
   onFrameSelect: (index: number) => void
 }) {
-  const containerRef = useRef<HTMLDivElement>(null)
-
-  // Build list of selectable frame indices (frames with code frames)
-  const selectableFrameIndices = useMemo(() => {
-    return frames
-      .map((frame, index) => ({ frame, index }))
-      .filter(
-        ({ frame }) =>
-          (!frame.ignored || isIgnoreListOpen) &&
-          Boolean(frame.originalCodeFrame) &&
-          Boolean(frame.originalStackFrame)
-      )
-      .map(({ index }) => index)
-  }, [frames, isIgnoreListOpen])
-
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      // Don't handle keyboard navigation when focused on interactive elements
-      if (isFocusedOnInteractiveElement(containerRef)) return
-
-      // Only handle keyboard navigation if there are selectable frames
-      if (selectableFrameIndices.length === 0) return
-
-      const currentPosition =
-        selectedFrameIndex !== null
-          ? selectableFrameIndices.indexOf(selectedFrameIndex)
-          : -1
-
-      let newPosition = currentPosition
-
-      if (e.key === 'ArrowDown' || e.key === 'j') {
-        e.preventDefault()
-        if (currentPosition < selectableFrameIndices.length - 1) {
-          newPosition = currentPosition + 1
-        } else {
-          // Wrap to first
-          newPosition = 0
-        }
-      } else if (e.key === 'ArrowUp' || e.key === 'k') {
-        e.preventDefault()
-        if (currentPosition > 0) {
-          newPosition = currentPosition - 1
-        } else {
-          // Wrap to last
-          newPosition = selectableFrameIndices.length - 1
-        }
-      }
-
-      if (newPosition !== currentPosition && newPosition >= 0) {
-        onFrameSelect(selectableFrameIndices[newPosition])
-      }
-    },
-    [selectableFrameIndices, selectedFrameIndex, onFrameSelect]
-  )
-
-  useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [handleKeyDown])
-
-  // Scroll selected frame into view
-  useEffect(() => {
-    if (selectedFrameIndex !== null && containerRef.current) {
-      const selectedElement = containerRef.current.querySelector(
-        `[data-nextjs-call-stack-frame-index="${selectedFrameIndex}"]`
-      )
-      if (selectedElement) {
-        selectedElement.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-      }
-    }
-  }, [selectedFrameIndex])
-
   return (
-    <div data-nextjs-call-stack-container ref={containerRef}>
+    <div data-nextjs-call-stack-container>
       <div data-nextjs-call-stack-header>
         <p data-nextjs-call-stack-title>
           Call Stack <span data-nextjs-call-stack-count>{frames.length}</span>
