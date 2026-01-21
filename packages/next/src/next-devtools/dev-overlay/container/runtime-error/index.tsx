@@ -26,11 +26,12 @@ export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
   }, [frames])
 
   // Find the first non-ignored frame with code frame as the default selection
+  // Don't fall back to ignored frames - match original behavior of showing nothing
   const defaultFrameIndex = useMemo(() => {
     const firstNonIgnored = framesWithCodeFrame.find(
       ({ frame }) => !frame.ignored
     )
-    return firstNonIgnored?.index ?? framesWithCodeFrame[0]?.index ?? null
+    return firstNonIgnored?.index ?? null
   }, [framesWithCodeFrame])
 
   const [selectedFrameIndex, setSelectedFrameIndex] = useState<number | null>(
@@ -53,12 +54,13 @@ export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
 
   return (
     <>
-      {selectedFrame && (
-        <CodeFrame
-          stackFrame={selectedFrame.originalStackFrame!}
-          codeFrame={selectedFrame.originalCodeFrame!}
-        />
-      )}
+      {selectedFrame?.originalStackFrame &&
+        selectedFrame?.originalCodeFrame && (
+          <CodeFrame
+            stackFrame={selectedFrame.originalStackFrame}
+            codeFrame={selectedFrame.originalCodeFrame}
+          />
+        )}
 
       {frames.length > 0 && (
         <ErrorOverlayCallStack
