@@ -35,7 +35,7 @@ import { workAsyncStorage } from './work-async-storage.external'
 // Contains metadata about the route tree. The client must fetch this before
 // it can fetch any actual segment data.
 export type RootTreePrefetch = {
-  buildId: string
+  buildId?: string
   tree: TreePrefetch
   staleTime: number
 }
@@ -77,7 +77,7 @@ export type TreePrefetch = {
 }
 
 export type SegmentPrefetch = {
-  buildId: string
+  buildId?: string
   rsc: React.ReactNode | null
   isPartial: boolean
   staleTime: number
@@ -272,9 +272,11 @@ async function PrefetchTreeData({
 
   // Render the route tree to a special `/_tree` segment.
   const treePrefetch: RootTreePrefetch = {
-    buildId,
     tree,
     staleTime,
+  }
+  if (buildId) {
+    treePrefetch.buildId = buildId
   }
   return treePrefetch
 }
@@ -282,7 +284,7 @@ async function PrefetchTreeData({
 function collectSegmentDataImpl(
   isClientParamParsingEnabled: boolean,
   route: FlightRouterState,
-  buildId: string,
+  buildId: string | undefined,
   staleTime: number,
   seedData: CacheNodeSeedData | null,
   clientModules: ManifestNode,
@@ -376,7 +378,7 @@ function collectSegmentDataImpl(
 }
 
 async function renderSegmentPrefetch(
-  buildId: string,
+  buildId: string | undefined,
   staleTime: number,
   rsc: React.ReactNode,
   requestKey: SegmentRequestKey,
@@ -384,10 +386,12 @@ async function renderSegmentPrefetch(
 ): Promise<[SegmentRequestKey, Buffer]> {
   // Render the segment data to a stream.
   const segmentPrefetch: SegmentPrefetch = {
-    buildId,
     rsc,
     isPartial: await isPartialRSCData(rsc, clientModules),
     staleTime,
+  }
+  if (buildId) {
+    segmentPrefetch.buildId = buildId
   }
   // Since all we're doing is decoding and re-encoding a cached prerender, if
   // it takes longer than a microtask, it must because of hanging promises
