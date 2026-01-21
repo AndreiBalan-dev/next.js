@@ -1,5 +1,6 @@
 import type { OriginalStackFrame } from '../../../shared/stack-frame'
 
+import { useCallback } from 'react'
 import { HotlinkedText } from '../hot-linked-text'
 import { ExternalIcon, SourceMappingErrorIcon } from '../../icons/external'
 import { getFrameSource } from '../../../shared/stack-frame'
@@ -7,11 +8,15 @@ import { useOpenInEditor } from '../../utils/use-open-in-editor'
 
 export const CallStackFrame: React.FC<{
   frame: OriginalStackFrame
-}> = function CallStackFrame({ frame }) {
+  index: number
+  isSelected: boolean
+  onSelect?: (index: number) => void
+}> = function CallStackFrame({ frame, index, isSelected, onSelect }) {
   // TODO: ability to expand resolved frames
 
   const f = frame.originalStackFrame ?? frame.sourceStackFrame
   const hasSource = Boolean(frame.originalCodeFrame)
+  const isSelectable = Boolean(onSelect)
   const open = useOpenInEditor(
     hasSource
       ? {
@@ -20,6 +25,22 @@ export const CallStackFrame: React.FC<{
           column1: f.column1 ?? 1,
         }
       : undefined
+  )
+
+  const handleClick = useCallback(() => {
+    if (onSelect) {
+      onSelect(index)
+    }
+  }, [onSelect, index])
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (onSelect && (e.key === 'Enter' || e.key === ' ')) {
+        e.preventDefault()
+        onSelect(index)
+      }
+    },
+    [onSelect, index]
   )
 
   // Formatted file source could be empty. e.g. <anonymous> will be formatted to empty string,
@@ -33,14 +54,25 @@ export const CallStackFrame: React.FC<{
   return (
     <div
       data-nextjs-call-stack-frame
+      data-nextjs-call-stack-frame-index={index}
       data-nextjs-call-stack-frame-no-source={!hasSource}
       data-nextjs-call-stack-frame-ignored={frame.ignored}
+      data-nextjs-call-stack-frame-selected={isSelected}
+      data-nextjs-call-stack-frame-selectable={isSelectable}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
+      tabIndex={isSelectable ? 0 : undefined}
+      role={isSelectable ? 'button' : undefined}
+      aria-pressed={isSelectable ? isSelected : undefined}
     >
       <div className="call-stack-frame-method-name">
         <HotlinkedText text={f.methodName} />
         {hasSource && (
           <button
-            onClick={open}
+            onClick={(e) => {
+              e.stopPropagation()
+              open?.()
+            }}
             className="open-in-editor-button"
             aria-label={`Open ${f.methodName} in editor`}
           >
@@ -50,7 +82,10 @@ export const CallStackFrame: React.FC<{
         {frame.error ? (
           <button
             className="source-mapping-error-button"
-            onClick={() => console.error(frame.reason)}
+            onClick={(e) => {
+              e.stopPropagation()
+              console.error(frame.reason)
+            }}
             title="Sourcemapping failed. Click to log cause of error."
           >
             <SourceMappingErrorIcon width={16} height={16} />
@@ -96,6 +131,24 @@ export const CALL_STACK_FRAME_STYLES = `
     padding: 6px 8px;
 
     border-radius: var(--rounded-lg);
+    transition: background-color 150ms ease;
+  }
+
+  [data-nextjs-call-stack-frame-selectable="true"] {
+    cursor: pointer;
+  }
+
+  [data-nextjs-call-stack-frame-selectable="true"]:hover {
+    background-color: var(--color-gray-100);
+  }
+
+  [data-nextjs-call-stack-frame-selected="true"] {
+    background-color: var(--color-gray-200);
+  }
+
+  [data-nextjs-call-stack-frame-selectable="true"]:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: -2px;
   }
 
   .call-stack-frame-method-name {

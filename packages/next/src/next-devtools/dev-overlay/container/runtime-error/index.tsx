@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback, useEffect } from 'react'
 import { CodeFrame } from '../../components/code-frame/code-frame'
 import { ErrorOverlayCallStack } from '../../components/errors/error-overlay-call-stack/error-overlay-call-stack'
 import { PSEUDO_HTML_DIFF_STYLES } from './component-stack-pseudo-html'
@@ -15,23 +15,48 @@ type RuntimeErrorProps = {
 export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
   const frames = useFrames(error)
 
-  const firstFrame = useMemo(() => {
-    const firstFirstPartyFrameIndex = frames.findIndex(
-      (entry) =>
-        !entry.ignored &&
-        Boolean(entry.originalCodeFrame) &&
-        Boolean(entry.originalStackFrame)
-    )
-
-    return frames[firstFirstPartyFrameIndex] ?? null
+  // Find all frames that have code frames (can be displayed)
+  const framesWithCodeFrame = useMemo(() => {
+    return frames
+      .map((frame, index) => ({ frame, index }))
+      .filter(
+        ({ frame }) =>
+          Boolean(frame.originalCodeFrame) && Boolean(frame.originalStackFrame)
+      )
   }, [frames])
+
+  // Find the first non-ignored frame with code frame as the default selection
+  const defaultFrameIndex = useMemo(() => {
+    const firstNonIgnored = framesWithCodeFrame.find(
+      ({ frame }) => !frame.ignored
+    )
+    return firstNonIgnored?.index ?? framesWithCodeFrame[0]?.index ?? null
+  }, [framesWithCodeFrame])
+
+  const [selectedFrameIndex, setSelectedFrameIndex] = useState<number | null>(
+    defaultFrameIndex
+  )
+
+  // Reset selection when error changes
+  useEffect(() => {
+    setSelectedFrameIndex(defaultFrameIndex)
+  }, [defaultFrameIndex])
+
+  const selectedFrame = useMemo(() => {
+    if (selectedFrameIndex === null) return null
+    return frames[selectedFrameIndex] ?? null
+  }, [frames, selectedFrameIndex])
+
+  const handleFrameSelect = useCallback((index: number) => {
+    setSelectedFrameIndex(index)
+  }, [])
 
   return (
     <>
-      {firstFrame && (
+      {selectedFrame && (
         <CodeFrame
-          stackFrame={firstFrame.originalStackFrame!}
-          codeFrame={firstFrame.originalCodeFrame!}
+          stackFrame={selectedFrame.originalStackFrame!}
+          codeFrame={selectedFrame.originalCodeFrame!}
         />
       )}
 
@@ -39,6 +64,8 @@ export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
         <ErrorOverlayCallStack
           dialogResizerRef={dialogResizerRef}
           frames={frames}
+          selectedFrameIndex={selectedFrameIndex}
+          onFrameSelect={handleFrameSelect}
         />
       )}
     </>
