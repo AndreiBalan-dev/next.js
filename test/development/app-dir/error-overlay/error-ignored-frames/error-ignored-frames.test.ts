@@ -11,26 +11,44 @@ describe('error-ignored-frames', () => {
     files: __dirname,
   })
 
-  it('should be able to click stack frames to change codeframe', async () => {
+  it('should update codeframe when clicking on a different stack frame', async () => {
     const browser = await next.browser('/interleaved')
     await waitForRedbox(browser)
 
     // Initially, the first non-ignored frame with codeframe should be selected
+    // This should be line 7 (the throw statement inside the callback)
     const initialSource = await getRedboxSource(browser)
     expect(initialSource).toContain('app/interleaved/page.tsx')
 
-    // Get all select buttons (frames with codeframes)
-    const selectButtons = await browser.elementsByCss(
-      '.call-stack-frame-select-button'
+    // Get the initially selected frame to verify it changes
+    const initialSelectedFrame = await browser.elementByCss(
+      '[data-nextjs-call-stack-frame-selected="true"]'
     )
-    // Should have multiple selectable frames
-    expect(selectButtons.length).toBeGreaterThan(1)
+    const initialFrameText = await initialSelectedFrame.text()
 
-    // Click on the second select button to change selection
-    // Each frame has two buttons (method name + file source), so index 2 is the second frame
-    await selectButtons[2].click()
+    // Get all selectable frames (frames with select buttons)
+    const selectableFrames = await browser.elementsByCss(
+      '[data-nextjs-call-stack-frame-selectable="true"]'
+    )
+    // Should have at least 2 selectable frames (line 7 and line 6)
+    expect(selectableFrames.length).toBeGreaterThanOrEqual(2)
+
+    // Click on the second selectable frame to change selection
+    // Use the file source button which is easier to target
+    const secondFrameButton = await browser.elementByCss(
+      '[data-nextjs-call-stack-frame-selectable="true"]:not([data-nextjs-call-stack-frame-selected="true"]) button.call-stack-frame-file-source'
+    )
+    await secondFrameButton.click()
+
+    // The selected frame should have changed
+    const newSelectedFrame = await browser.elementByCss(
+      '[data-nextjs-call-stack-frame-selected="true"]'
+    )
+    const newFrameText = await newSelectedFrame.text()
+    expect(newFrameText).not.toBe(initialFrameText)
 
     // The codeframe should still show content from the interleaved page
+    // but potentially highlighting a different line
     const newSource = await getRedboxSource(browser)
     expect(newSource).toContain('app/interleaved/page.tsx')
   })
