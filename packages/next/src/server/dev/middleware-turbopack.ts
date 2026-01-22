@@ -92,7 +92,9 @@ async function batchedTraceSource(
   const ignored =
     shouldIgnorePath(originalFile ?? sourceFrame.file) ||
     // isInternal means resource starts with turbopack:///[turbopack]
-    !!sourceFrame.isInternal
+    !!sourceFrame.isInternal ||
+    // If there's no useful source location, it's likely internal framework code
+    (!sourceFrame.line && !sourceFrame.column)
 
   // Load source for all frames to support codeframe display for ignored frames too
   if (originalFile) {
@@ -257,7 +259,9 @@ async function nativeTraceSource(
           applicableSourceMap.ignoreList?.includes(sourceIndex) ||
           // Also check shouldIgnorePath for the original source (e.g., Next.js internals
           // in monorepo development that aren't in the sourcemap's ignoreList)
-          shouldIgnorePath(originalPosition.source ?? frame.file)
+          shouldIgnorePath(originalPosition.source ?? frame.file) ||
+          // If there's no useful source location, it's likely internal framework code
+          (originalPosition.line === null && originalPosition.column === null)
       }
 
       const originalStackFrame: IgnorableStackFrame = {
