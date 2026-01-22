@@ -252,10 +252,10 @@ async function nativeTraceSource(
           originalPosition.source!
         )
         ignored =
-          applicableSourceMap.ignoreList?.includes(sourceIndex) ??
-          // When sourcemap is not available, fallback to checking `frame.file`.
-          // e.g. In pages router, nextjs server code is not bundled into the page.
-          shouldIgnorePath(frame.file)
+          applicableSourceMap.ignoreList?.includes(sourceIndex) ||
+          // Also check shouldIgnorePath for the original source (e.g., Next.js internals
+          // in monorepo development that aren't in the sourcemap's ignoreList)
+          shouldIgnorePath(originalPosition.source ?? frame.file)
       }
 
       const originalStackFrame: IgnorableStackFrame = {
