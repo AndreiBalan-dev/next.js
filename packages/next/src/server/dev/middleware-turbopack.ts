@@ -32,6 +32,8 @@ function shouldIgnorePath(modulePath: string): boolean {
     modulePath.includes('next/dist') ||
     // Also ignore Next.js source files (in monorepo development)
     modulePath.includes('next/src/') ||
+    // Handle monorepo workspace paths (e.g., packages/next/src/...)
+    modulePath.includes('packages/next/') ||
     modulePath.startsWith('node:')
   )
 }
