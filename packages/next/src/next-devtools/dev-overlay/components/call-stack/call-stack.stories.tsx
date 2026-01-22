@@ -60,6 +60,9 @@ const ignoredFrame = {
 export const SingleFrame: Story = {
   args: {
     frames: [frame],
+    isIgnoreListOpen: false,
+    ignoredFramesTally: 0,
+    onToggleIgnoreList: () => {},
     selectedFrameIndex: 0,
     onFrameSelect: () => {},
   },
