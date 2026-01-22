@@ -20,10 +20,7 @@ export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
   const framesWithCodeFrame = useMemo(() => {
     return frames
       .map((frame, index) => ({ frame, index }))
-      .filter(
-        ({ frame }) =>
-          Boolean(frame.originalCodeFrame) && Boolean(frame.originalStackFrame)
-      )
+      .filter(({ frame }) => Boolean(frame.originalCodeFrame))
   }, [frames])
 
   // Find the first non-ignored frame with code frame as the default selection

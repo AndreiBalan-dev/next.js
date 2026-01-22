@@ -37,8 +37,7 @@ export function CallStack({
         )}
       </div>
       {frames.map((frame, frameIndex) => {
-        const hasCodeFrame =
-          Boolean(frame.originalCodeFrame) && Boolean(frame.originalStackFrame)
+        const hasCodeFrame = Boolean(frame.originalCodeFrame)
         return !frame.ignored || isIgnoreListOpen ? (
           <CallStackFrame
             key={frameIndex}

@@ -169,6 +169,15 @@ export const CALL_STACK_FRAME_STYLES = `
     text-align: left;
   }
 
+  .call-stack-frame-method-name .call-stack-frame-select-button {
+    display: inline;
+  }
+
+  button.call-stack-frame-file-source {
+    display: block;
+    width: 100%;
+  }
+
   .call-stack-frame-select-button:focus-visible {
     outline: var(--focus-ring);
     outline-offset: 2px;
