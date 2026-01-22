@@ -2,7 +2,7 @@
  * Definitions for the protocol that is used to communicate between the
  * Turbopack runtime and the Turbopack server for issue reporting and HMR.
  */
-type PartialServerMessage = {
+type PartialHMRPayload = {
   resource: ResourceIdentifier
   issues: Issue[]
   type: 'partial'
@@ -12,7 +12,7 @@ type PartialServerMessage = {
 // string encoding of a module factory (used in hmr updates)
 type ModuleFactoryString = string
 
-type ServerMessage = {
+type HMRPayload = {
   resource: ResourceIdentifier
   issues: Issue[]
 } & (
@@ -22,7 +22,7 @@ type ServerMessage = {
   | {
       type: 'notFound'
     }
-  | PartialServerMessage
+  | PartialHMRPayload
   | {
       type: 'issues'
     }

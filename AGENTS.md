@@ -268,6 +268,16 @@ When running Next.js integration tests, you must rebuild if source files have ch
 - Source map paths vary (webpack: `./src/`, tsc: `src/`) - try multiple formats
 - `process.cwd()` in stack trace formatting produces different paths in tests vs production
 
+### Turbopack JavaScript runtime code
+
+This Turbopack browser runtime JavaScript code lives as TypeScript files in the following directories named `runtime`:
+
+- `turbopack/crates/turbopack-ecmascript-runtime/js/src/browser/runtime`
+- `turbopack/crates/turbopack-ecmascript-runtime/js/src/nodejs/runtime`
+- `turbopack/crates/turbopack-ecmascript-runtime/js/src/shared/runtime`
+
+Files in these directories are compiled and concatenated at Rust build-time to form the code that gets executed in browser and Node at runtime. These files are not EcmaScript modules nor CommonJS modules -- instead, the TypeScript uses `<reference>` tags to reference other values and types in scope when the files are concatenated. Other ts code in the runtime crate _can_ use esm though, such as: `turbopack/crates/turbopack-ecmascript-runtime/js/src/browser/dev/hmr-client/`.
+
 ### Documentation Code Blocks
 
 - When adding `highlight={...}` attributes to code blocks, carefully count the actual line numbers within the code block

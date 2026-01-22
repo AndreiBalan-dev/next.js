@@ -5,7 +5,7 @@
  * code, not by user code.
  */
 
-type UpdateCallback = (update: ServerMessage) => void
+type UpdateCallback = (update: HMRPayload) => void
 
 type ChunkUpdateProvider = {
   push: (registration: [ChunkListPath, UpdateCallback]) => void

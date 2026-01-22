@@ -1,0 +1,10 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "skipLibCheck": true,
+    // WebWorker provides console and basic globals without browser-specific APIs like location
+    "lib": ["ESNext", "WebWorker"],
+    "target": "esnext"
+  },
+  "include": ["*.ts"]
+}
