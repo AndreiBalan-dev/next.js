@@ -30,6 +30,8 @@ function shouldIgnorePath(modulePath: string): boolean {
     modulePath.includes('node_modules') ||
     // Only relevant for when Next.js is symlinked e.g. in the Next.js monorepo
     modulePath.includes('next/dist') ||
+    // Also ignore Next.js source files (in monorepo development)
+    modulePath.includes('next/src/') ||
     modulePath.startsWith('node:')
   )
 }

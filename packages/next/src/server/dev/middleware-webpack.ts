@@ -37,6 +37,8 @@ function shouldIgnoreSource(sourceURL: string): boolean {
     sourceURL.includes('node_modules') ||
     // Only relevant for when Next.js is symlinked e.g. in the Next.js monorepo
     sourceURL.includes('next/dist') ||
+    // Also ignore Next.js source files (in monorepo development)
+    sourceURL.includes('next/src/') ||
     sourceURL.startsWith('node:')
   )
 }
