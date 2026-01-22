@@ -85,13 +85,12 @@ async function batchedTraceSource(
   let source = null
   const originalFile = sourceFrame.originalFile
 
+  // Don't look up source for node_modules or internals. These can often be large bundled files.
   const ignored =
     shouldIgnorePath(originalFile ?? sourceFrame.file) ||
     // isInternal means resource starts with turbopack:///[turbopack]
     !!sourceFrame.isInternal
-
-  // Load source for all frames, including ignored ones, to support codeframe display
-  if (originalFile) {
+  if (originalFile && !ignored) {
     let sourcePromise = currentSourcesByFile.get(originalFile)
     if (!sourcePromise) {
       sourcePromise = project.getSourceForAsset(originalFile)
