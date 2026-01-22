@@ -62,6 +62,8 @@ export const SingleFrame: Story = {
     frames: [frame],
     selectedFrameIndex: 0,
     onFrameSelect: () => {},
+    isIgnoreListOpen: false,
+    setIsIgnoreListOpen: () => {},
   },
 }
 
@@ -89,6 +91,7 @@ const multipleFrames = [
 
 function InteractiveErrorOverlayCallStack() {
   const [selectedFrameIndex, setSelectedFrameIndex] = useState<number | null>(0)
+  const [isIgnoreListOpen, setIsIgnoreListOpen] = useState(false)
   const dialogResizerRef = useRef<HTMLDivElement>(null)
   return (
     <ErrorOverlayCallStack
@@ -96,6 +99,8 @@ function InteractiveErrorOverlayCallStack() {
       dialogResizerRef={dialogResizerRef}
       selectedFrameIndex={selectedFrameIndex}
       onFrameSelect={setSelectedFrameIndex}
+      isIgnoreListOpen={isIgnoreListOpen}
+      setIsIgnoreListOpen={setIsIgnoreListOpen}
     />
   )
 }

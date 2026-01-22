@@ -3,11 +3,43 @@ import {
   waitForRedbox,
   getStackFramesContent,
   toggleCollapseCallStackFrames,
+  getRedboxSource,
 } from 'next-test-utils'
 
 describe('error-ignored-frames', () => {
   const { isTurbopack, next } = nextTestSetup({
     files: __dirname,
+  })
+
+  it('should hide codeframe when selected ignored frame is collapsed', async () => {
+    const browser = await next.browser('/client')
+    await waitForRedbox(browser)
+
+    // Initially, a non-ignored frame should be selected and codeframe shown
+    const initialSource = await getRedboxSource(browser)
+    expect(initialSource).toContain('app/client/page.tsx')
+
+    // Expand the ignore list to show ignored frames
+    await toggleCollapseCallStackFrames(browser)
+
+    // Click on an ignored frame to select it
+    const ignoredFrame = await browser.elementByCss(
+      '[data-nextjs-call-stack-frame-ignored="true"] .call-stack-frame-select-button'
+    )
+    await ignoredFrame.click()
+
+    // The codeframe should now show the ignored frame's source
+    const ignoredSource = await getRedboxSource(browser)
+    expect(ignoredSource).toBeTruthy()
+
+    // Collapse the ignore list
+    await toggleCollapseCallStackFrames(browser)
+
+    // The codeframe should be hidden since the selected frame is no longer visible
+    const collapsedSource = await getRedboxSource(browser)
+    // When the selected ignored frame is collapsed, no codeframe should be shown
+    // because the first non-ignored frame becomes the visible selection
+    expect(collapsedSource).toContain('app/client/page.tsx')
   })
 
   it('should be able to collapse ignored frames in server component', async () => {

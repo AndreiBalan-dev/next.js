@@ -14,6 +14,7 @@ type RuntimeErrorProps = {
 
 export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
   const frames = useFrames(error)
+  const [isIgnoreListOpen, setIsIgnoreListOpen] = useState(false)
 
   // Find all frames that have code frames (can be displayed)
   const framesWithCodeFrame = useMemo(() => {
@@ -52,9 +53,15 @@ export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
     setSelectedFrameIndex(index)
   }, [])
 
+  // Only show codeframe if the selected frame is visible
+  // (i.e., not ignored, or ignored but ignore list is open)
+  const isSelectedFrameVisible =
+    selectedFrame && (!selectedFrame.ignored || isIgnoreListOpen)
+
   return (
     <>
-      {selectedFrame?.originalStackFrame &&
+      {isSelectedFrameVisible &&
+        selectedFrame?.originalStackFrame &&
         selectedFrame?.originalCodeFrame && (
           <CodeFrame
             stackFrame={selectedFrame.originalStackFrame}
@@ -68,6 +75,8 @@ export function RuntimeError({ error, dialogResizerRef }: RuntimeErrorProps) {
           frames={frames}
           selectedFrameIndex={selectedFrameIndex}
           onFrameSelect={handleFrameSelect}
+          isIgnoreListOpen={isIgnoreListOpen}
+          setIsIgnoreListOpen={setIsIgnoreListOpen}
         />
       )}
     </>
