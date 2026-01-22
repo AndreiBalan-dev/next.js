@@ -27,7 +27,7 @@ export const CallStackFrame: React.FC<{
       : undefined
   )
 
-  const handleClick = useCallback(() => {
+  const handleSelect = useCallback(() => {
     if (onSelect) {
       onSelect(index)
     }
@@ -49,16 +49,23 @@ export const CallStackFrame: React.FC<{
       data-nextjs-call-stack-frame-ignored={frame.ignored}
       data-nextjs-call-stack-frame-selected={isSelected}
       data-nextjs-call-stack-frame-selectable={isSelectable}
-      onClick={handleClick}
     >
       <div className="call-stack-frame-method-name">
-        <HotlinkedText text={f.methodName} />
+        {isSelectable ? (
+          <button
+            type="button"
+            onClick={handleSelect}
+            className="call-stack-frame-select-button"
+          >
+            <HotlinkedText text={f.methodName} />
+          </button>
+        ) : (
+          <HotlinkedText text={f.methodName} />
+        )}
         {hasSource && (
           <button
-            onClick={(e) => {
-              e.stopPropagation()
-              open?.()
-            }}
+            type="button"
+            onClick={open}
             className="open-in-editor-button"
             aria-label={`Open ${f.methodName} in editor`}
           >
@@ -67,23 +74,32 @@ export const CallStackFrame: React.FC<{
         )}
         {frame.error ? (
           <button
+            type="button"
             className="source-mapping-error-button"
-            onClick={(e) => {
-              e.stopPropagation()
-              console.error(frame.reason)
-            }}
+            onClick={() => console.error(frame.reason)}
             title="Sourcemapping failed. Click to log cause of error."
           >
             <SourceMappingErrorIcon width={16} height={16} />
           </button>
         ) : null}
       </div>
-      <span
-        className="call-stack-frame-file-source"
-        data-has-source={hasSource}
-      >
-        {fileSource}
-      </span>
+      {isSelectable ? (
+        <button
+          type="button"
+          onClick={handleSelect}
+          className="call-stack-frame-file-source call-stack-frame-select-button"
+          data-has-source={hasSource}
+        >
+          {fileSource}
+        </button>
+      ) : (
+        <span
+          className="call-stack-frame-file-source"
+          data-has-source={hasSource}
+        >
+          {fileSource}
+        </span>
+      )}
     </div>
   )
 }
@@ -120,10 +136,6 @@ export const CALL_STACK_FRAME_STYLES = `
     transition: background-color 150ms ease;
   }
 
-  [data-nextjs-call-stack-frame-selectable="true"] {
-    cursor: pointer;
-  }
-
   [data-nextjs-call-stack-frame-selectable="true"]:hover {
     background-color: var(--color-gray-100);
   }
@@ -149,6 +161,18 @@ export const CALL_STACK_FRAME_STYLES = `
       width: var(--size-16px);
       height: var(--size-16px);
     }
+  }
+
+  .call-stack-frame-select-button {
+    all: unset;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .call-stack-frame-select-button:focus-visible {
+    outline: var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 
   .open-in-editor-button, .source-mapping-error-button {
