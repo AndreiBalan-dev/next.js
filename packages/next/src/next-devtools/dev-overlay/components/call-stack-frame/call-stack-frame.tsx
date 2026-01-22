@@ -41,6 +41,10 @@ export const CallStackFrame: React.FC<{
     return null
   }
 
+  // Using the "faux nested interactive controls" pattern:
+  // https://piccalil.li/blog/accessible-faux-nested-interactive-controls/
+  // The main button uses a ::after pseudo-element to cover the whole frame area.
+  // Other buttons are positioned with higher z-index to be clickable above it.
   return (
     <div
       data-nextjs-call-stack-frame
@@ -60,13 +64,15 @@ export const CallStackFrame: React.FC<{
             <HotlinkedText text={f.methodName} />
           </button>
         ) : (
-          <HotlinkedText text={f.methodName} />
+          <span>
+            <HotlinkedText text={f.methodName} />
+          </span>
         )}
         {hasSource && (
           <button
             type="button"
             onClick={open}
-            className="open-in-editor-button"
+            className="call-stack-frame-action-button open-in-editor-button"
             aria-label={`Open ${f.methodName} in editor`}
           >
             <ExternalIcon width={16} height={16} />
@@ -75,7 +81,7 @@ export const CallStackFrame: React.FC<{
         {frame.error ? (
           <button
             type="button"
-            className="source-mapping-error-button"
+            className="call-stack-frame-action-button source-mapping-error-button"
             onClick={() => console.error(frame.reason)}
             title="Sourcemapping failed. Click to log cause of error."
           >
@@ -83,23 +89,12 @@ export const CallStackFrame: React.FC<{
           </button>
         ) : null}
       </div>
-      {isSelectable ? (
-        <button
-          type="button"
-          onClick={handleSelect}
-          className="call-stack-frame-file-source call-stack-frame-select-button"
-          data-has-source={hasSource}
-        >
-          {fileSource}
-        </button>
-      ) : (
-        <span
-          className="call-stack-frame-file-source"
-          data-has-source={hasSource}
-        >
-          {fileSource}
-        </span>
-      )}
+      <span
+        className="call-stack-frame-file-source"
+        data-has-source={hasSource}
+      >
+        {fileSource}
+      </span>
     </div>
   )
 }
@@ -120,8 +115,9 @@ export const CALL_STACK_FRAME_STYLES = `
     opacity: 0.6;
   }
 
+  /* Container for the faux nested interactive controls pattern */
   [data-nextjs-call-stack-frame] {
-    user-select: text;
+    position: relative;
     display: block;
     box-sizing: border-box;
 
@@ -163,25 +159,30 @@ export const CALL_STACK_FRAME_STYLES = `
     }
   }
 
+  /* Main select button with ::after covering the whole frame */
   .call-stack-frame-select-button {
     all: unset;
     cursor: pointer;
     text-align: left;
   }
 
-  .call-stack-frame-method-name .call-stack-frame-select-button {
-    display: inline;
-  }
-
-  button.call-stack-frame-file-source {
-    display: block;
-    width: 100%;
+  /* The ::after pseudo-element covers the whole frame area */
+  .call-stack-frame-select-button::after {
+    content: '';
+    position: absolute;
+    inset: 0;
   }
 
   .call-stack-frame-select-button:focus-visible {
     outline: var(--focus-ring);
     outline-offset: 2px;
     border-radius: 2px;
+  }
+
+  /* Action buttons positioned above the select button's ::after */
+  .call-stack-frame-action-button {
+    position: relative;
+    z-index: 1;
   }
 
   .open-in-editor-button, .source-mapping-error-button {
@@ -208,6 +209,7 @@ export const CALL_STACK_FRAME_STYLES = `
   }
 
   .call-stack-frame-file-source {
+    display: block;
     color: var(--color-gray-900);
     font-size: var(--size-14);
     line-height: var(--size-20);

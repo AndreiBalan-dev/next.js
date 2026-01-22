@@ -1,5 +1,4 @@
 import { codeFrameColumns } from 'next/dist/compiled/babel/code-frame'
-import isInternal from '../../shared/lib/is-internal'
 import type { StackFrame } from '../../server/lib/parse-stack'
 import { ignoreListAnonymousStackFramesIfSandwiched as ignoreListAnonymousStackFramesIfSandwichedGeneric } from '../../server/lib/source-maps'
 
@@ -61,14 +60,13 @@ export function ignoreListAnonymousStackFramesIfSandwiched(
 
 /**
  * It looks up the code frame of the traced source.
- * @note It ignores Next.js/React internals, as these can often be huge bundled files.
  */
 export function getOriginalCodeFrame(
   frame: IgnorableStackFrame,
   source: string | null,
   colors: boolean = process.stdout.isTTY
 ): string | null {
-  if (!source || isInternal(frame.file)) {
+  if (!source) {
     return null
   }
 

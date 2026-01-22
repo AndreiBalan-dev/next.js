@@ -16,7 +16,6 @@ describe('error-ignored-frames', () => {
     await waitForRedbox(browser)
 
     // Initially, the first non-ignored frame with codeframe should be selected
-    // This should be line 7 (the throw statement inside the callback)
     const initialSource = await getRedboxSource(browser)
     expect(initialSource).toContain('app/interleaved/page.tsx')
 
@@ -30,13 +29,13 @@ describe('error-ignored-frames', () => {
     const selectableFrames = await browser.elementsByCss(
       '[data-nextjs-call-stack-frame-selectable="true"]'
     )
-    // Should have at least 2 selectable frames (line 7 and line 6)
+    // Should have at least 2 selectable frames
     expect(selectableFrames.length).toBeGreaterThanOrEqual(2)
 
-    // Click on the second selectable frame to change selection
-    // Use the file source button which is easier to target
+    // Click on a different selectable frame to change selection
+    // Using the select button which covers the whole frame area
     const secondFrameButton = await browser.elementByCss(
-      '[data-nextjs-call-stack-frame-selectable="true"]:not([data-nextjs-call-stack-frame-selected="true"]) button.call-stack-frame-file-source'
+      '[data-nextjs-call-stack-frame-selectable="true"]:not([data-nextjs-call-stack-frame-selected="true"]) .call-stack-frame-select-button'
     )
     await secondFrameButton.click()
 
@@ -48,9 +47,30 @@ describe('error-ignored-frames', () => {
     expect(newFrameText).not.toBe(initialFrameText)
 
     // The codeframe should still show content from the interleaved page
-    // but potentially highlighting a different line
     const newSource = await getRedboxSource(browser)
     expect(newSource).toContain('app/interleaved/page.tsx')
+  })
+
+  it('should update codeframe when clicking on an ignored frame', async () => {
+    const browser = await next.browser('/interleaved')
+    await waitForRedbox(browser)
+
+    // Initially shows user code
+    const initialSource = await getRedboxSource(browser)
+    expect(initialSource).toContain('app/interleaved/page.tsx')
+
+    // Expand the ignore list to show ignored frames
+    await toggleCollapseCallStackFrames(browser)
+
+    // Click on an ignored frame - it should now be selectable since backend sends codeframes
+    const ignoredFrame = await browser.elementByCss(
+      '[data-nextjs-call-stack-frame-ignored="true"][data-nextjs-call-stack-frame-selectable="true"] .call-stack-frame-select-button'
+    )
+    await ignoredFrame.click()
+
+    // The codeframe should update to show the ignored frame's source
+    const newSource = await getRedboxSource(browser)
+    expect(newSource).toBeTruthy()
   })
 
   it('should be able to collapse ignored frames in server component', async () => {
