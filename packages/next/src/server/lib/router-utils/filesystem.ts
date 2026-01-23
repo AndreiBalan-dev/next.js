@@ -574,7 +574,10 @@ export async function setupFsCheck(opts: {
           continue
         }
 
-        const nextDataPrefix = `/_next/data/${buildId}/`
+        // When deploymentId is set, data URLs don't include the build ID
+        const nextDataPrefix = opts.config.deploymentId
+          ? '/_next/data/'
+          : `/_next/data/${buildId}/`
 
         if (
           type === 'pageFile' &&
@@ -582,7 +585,7 @@ export async function setupFsCheck(opts: {
           curItemPath.endsWith('.json')
         ) {
           items = nextDataRoutes
-          // remove _next/data/<build-id> prefix
+          // remove _next/data/ or _next/data/<build-id>/ prefix
           curItemPath = curItemPath.substring(nextDataPrefix.length - 1)
 
           // remove .json postfix
