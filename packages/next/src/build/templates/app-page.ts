@@ -1567,3 +1567,10 @@ function createPPRBoundarySentinel() {
     },
   })
 }
+
+// Enable server-side HMR - must be at top level for Turbopack to recognize
+// @ts-ignore - module.hot exists in development
+if (typeof module !== 'undefined' && module.hot) {
+  // @ts-ignore
+  module.hot.accept()
+}

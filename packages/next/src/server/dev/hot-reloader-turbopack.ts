@@ -170,25 +170,28 @@ function setupServerHmr(project: Project) {
 
       for await (const result of subscription) {
         const update = result as TurbopackUpdate
-
-        // Only process partial updates with actual code changes
         if (update.type !== 'partial') {
           continue
         }
 
-        const merged = update.instruction?.merged
-        if (!merged || merged.length === 0) {
+        // The instruction arrives as EcmascriptMergedUpdate directly (not wrapped in ChunkListUpdate)
+        // Wrap it in the format the runtime expects: { merged: [update] }
+        const instruction = update.instruction as any
+        if (!instruction || instruction.type !== 'EcmascriptMergedUpdate') {
           continue
         }
 
-        // Apply the update via the runtime
-        if (typeof __next__server_hmr_apply__ === 'function') {
-          const applied = __next__server_hmr_apply__(update as any)
+        // Wrap the EcmascriptMergedUpdate in the format the runtime expects
+        const wrappedUpdate = {
+          ...update,
+          instruction: {
+            type: 'ChunkListUpdate',
+            merged: [instruction],
+          },
+        }
 
-          if (applied) {
-            // TODO: Notify clients to refresh and get updated server content
-            // This will trigger the client to re-fetch the page with new server components
-          }
+        if (typeof __next__server_hmr_apply__ === 'function') {
+          __next__server_hmr_apply__(wrappedUpdate as any)
         }
       }
     })().catch((err) => {
@@ -199,36 +202,44 @@ function setupServerHmr(project: Project) {
 
   // Listen to the Rust bindings update us on changing server HMR identifiers
   ;(async () => {
-    const serverHmrIdentifiers = project.serverHmrIdentifiersSubscribe()
+    try {
+      const serverHmrIdentifiers = project.serverHmrIdentifiersSubscribe()
 
-    // Process identifiers (both initial and subsequent updates)
-    for await (const data of serverHmrIdentifiers) {
-      const currentIdentifiers = new Set(
-        data.identifiers.filter((id) => id.endsWith('.js'))
-      )
+      // Process identifiers (both initial and subsequent updates)
+      for await (const data of serverHmrIdentifiers) {
+        const currentIdentifiers = new Set(
+          data.identifiers.filter((id) => id.endsWith('.js'))
+        )
 
-      // Clean up subscriptions for removed identifiers (like when pages are deleted)
-      const identifiersToRemove = []
-      for (const identifier of serverHmrSubscriptions.keys()) {
-        if (!currentIdentifiers.has(identifier)) {
-          identifiersToRemove.push(identifier)
+        // Clean up subscriptions for removed identifiers (like when pages are deleted)
+        const identifiersToRemove = []
+        for (const identifier of serverHmrSubscriptions.keys()) {
+          if (!currentIdentifiers.has(identifier)) {
+            identifiersToRemove.push(identifier)
+          }
+        }
+
+        for (const identifier of identifiersToRemove) {
+          const subscription = serverHmrSubscriptions.get(identifier)
+          subscription?.return?.()
+          serverHmrSubscriptions.delete(identifier)
+        }
+
+        // Subscribe to HMR events for new server modules
+        for (const identifier of currentIdentifiers) {
+          if (!serverHmrSubscriptions.has(identifier)) {
+            subscribeToServerHmr(identifier)
+          }
         }
       }
-
-      for (const identifier of identifiersToRemove) {
-        const subscription = serverHmrSubscriptions.get(identifier)
-        subscription?.return?.()
-        serverHmrSubscriptions.delete(identifier)
-      }
-
-      // Subscribe to HMR events for new server modules
-      for (const identifier of currentIdentifiers) {
-        if (!serverHmrSubscriptions.has(identifier)) {
-          subscribeToServerHmr(identifier)
-        }
-      }
+    } catch (err) {
+      console.error('[Server HMR Setup] Error in identifier subscription:', err)
     }
   })()
+
+  return {
+    serverHmrSubscriptions,
+  }
 }
 
 /**
@@ -489,6 +500,13 @@ export async function createHotReloaderTurbopack(
     )
 
     for (const file of serverPaths) {
+      // Skip clearing cache for server chunks with active HMR subscriptions
+      // Server HMR already applied granular updates to the turbopack module cache
+      const relativePath = relative(distDir, file)
+      if (serverHmrSubscriptions.has(relativePath)) {
+        continue
+      }
+
       clearModuleContext(file)
       deleteCache(file)
     }
@@ -531,7 +549,7 @@ export async function createHotReloaderTurbopack(
     }
   }
 
-  setupServerHmr(project)
+  const { serverHmrSubscriptions } = setupServerHmr(project)
 
   let hmrEventHappened = false
   let hmrHash = 0
