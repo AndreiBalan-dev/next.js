@@ -1405,6 +1405,54 @@ impl<S: ParallelScheduler, const FAMILIES: usize> TurboPersistence<S, FAMILIES> 
         Ok(None)
     }
 
+    /// Looks up a key and returns all matching values.
+    ///
+    /// This is useful for keyspaces where keys are hashes and collisions are possible.
+    /// Unlike `get`, which returns only the first match, this method returns all
+    /// entries with the same key from all SST files.
+    ///
+    /// Note: This method does NOT deduplicate values. If the same key-value pair exists
+    /// in multiple SST files (e.g., before compaction), it will be returned multiple times.
+    pub fn get_multiple<K: QueryKey>(&self, family: usize, key: &K) -> Result<Vec<ArcSlice<u8>>> {
+        debug_assert!(family < FAMILIES, "Family index out of bounds");
+        let hash = hash_key(key);
+        let inner = self.inner.read();
+        let mut results: Vec<LookupValue> = Vec::new();
+
+        for meta in inner.meta_files.iter().rev() {
+            meta.lookup_all(
+                family as u32,
+                hash,
+                key,
+                &self.amqf_cache,
+                &self.key_block_cache,
+                &self.value_block_cache,
+                &mut results,
+            )?;
+        }
+
+        inner.accessed_key_hashes[family].insert(hash);
+
+        // Convert LookupValue to ArcSlice, filtering out Deleted entries and handling blobs
+        let mut output = Vec::with_capacity(results.len());
+        for result in results {
+            match result {
+                LookupValue::Deleted => {
+                    // Skip deleted entries
+                }
+                LookupValue::Slice { value } => {
+                    output.push(value);
+                }
+                LookupValue::Blob { sequence_number } => {
+                    let blob = self.read_blob(sequence_number)?;
+                    output.push(blob);
+                }
+            }
+        }
+
+        Ok(output)
+    }
+
     pub fn batch_get<K: QueryKey>(
         &self,
         family: usize,

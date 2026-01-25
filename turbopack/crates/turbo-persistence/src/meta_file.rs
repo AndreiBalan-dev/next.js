@@ -22,7 +22,10 @@ use turbo_bincode::turbo_bincode_decode;
 use crate::{
     QueryKey,
     lookup_entry::LookupValue,
-    static_sorted_file::{BlockCache, SstLookupResult, StaticSortedFile, StaticSortedFileMetaData},
+    static_sorted_file::{
+        BlockCache, LookupKeyByHashAndValueResult, SstLookupResult, StaticSortedFile,
+        StaticSortedFileMetaData,
+    },
 };
 
 #[derive(Clone, Default)]
@@ -425,6 +428,86 @@ impl MetaFile {
                     .lookup(key_hash, key, key_block_cache, value_block_cache)?;
             if !matches!(result, SstLookupResult::NotFound) {
                 return Ok(MetaLookupResult::SstLookup(result));
+            }
+        }
+        Ok(miss_result)
+    }
+
+    /// Looks up a key and returns all matching values from this meta file.
+    ///
+    /// This is useful for keyspaces where keys are hashes and collisions are possible.
+    /// Unlike `lookup`, which returns only the first match, this method returns all
+    /// entries with the same key from all SST files in this meta file.
+    pub fn lookup_all<K: QueryKey>(
+        &self,
+        key_family: u32,
+        key_hash: u64,
+        key: &K,
+        amqf_cache: &AmqfCache,
+        key_block_cache: &BlockCache,
+        value_block_cache: &BlockCache,
+        results: &mut Vec<LookupValue>,
+    ) -> Result<()> {
+        if key_family != self.family {
+            return Ok(());
+        }
+        for entry in self.entries.iter().rev() {
+            if key_hash < entry.min_hash || key_hash > entry.max_hash {
+                continue;
+            }
+            {
+                let amqf = entry.amqf(self, amqf_cache)?;
+                if !amqf.contains_fingerprint(key_hash) {
+                    continue;
+                }
+            }
+            let values =
+                entry
+                    .sst(self)?
+                    .lookup_all(key_hash, key, key_block_cache, value_block_cache)?;
+            results.extend(values);
+        }
+        Ok(())
+    }
+
+    /// Looks up a key by its hash, confirming the match by comparing the value.
+    ///
+    /// This is useful for reverse lookups where you have a secondary index mapping
+    /// values back to key hashes. Returns the key bytes if found.
+    pub fn lookup_key_by_hash_and_value(
+        &self,
+        key_family: u32,
+        key_hash: u64,
+        expected_value: &[u8],
+        amqf_cache: &AmqfCache,
+        key_block_cache: &BlockCache,
+        value_block_cache: &BlockCache,
+    ) -> Result<MetaLookupResult> {
+        if key_family != self.family {
+            return Ok(MetaLookupResult::FamilyMiss);
+        }
+        let mut miss_result = MetaLookupResult::RangeMiss;
+        for entry in self.entries.iter().rev() {
+            if key_hash < entry.min_hash || key_hash > entry.max_hash {
+                continue;
+            }
+            {
+                let amqf = entry.amqf(self, amqf_cache)?;
+                if !amqf.contains_fingerprint(key_hash) {
+                    miss_result = MetaLookupResult::QuickFilterMiss;
+                    continue;
+                }
+            }
+            let result = entry.sst(self)?.lookup_key_by_hash_and_value(
+                key_hash,
+                expected_value,
+                key_block_cache,
+                value_block_cache,
+            )?;
+            if let LookupKeyByHashAndValueResult::Found { key } = result {
+                return Ok(MetaLookupResult::SstLookup(SstLookupResult::Found(
+                    LookupValue::Slice { value: key },
+                )));
             }
         }
         Ok(miss_result)

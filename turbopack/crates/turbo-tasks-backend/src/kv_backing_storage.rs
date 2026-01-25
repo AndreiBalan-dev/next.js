@@ -269,10 +269,6 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
         let _span = tracing::info_span!("save snapshot", operations = operations.len()).entered();
         let mut batch = self.inner.database.write_batch()?;
 
-        // these buffers should be large, because they're temporary and re-used.
-        // From measuring a large application the largest TaskType was ~365b, so this should be big
-        // enough to trigger no resizes in the loop.
-        const INITIAL_ENCODE_BUFFER_CAPACITY: usize = 512;
         #[cfg(feature = "print_cache_item_size")]
         let all_stats: std::sync::Mutex<
             std::collections::HashMap<&'static str, TaskTypeCacheStats>,
@@ -312,20 +308,14 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
                             let _span = _span.clone().entered();
                             let mut max_task_id = 0;
 
-                            // Re-use the same buffer across every `serialize_task_type` call in
-                            // this chunk. `ConcurrentWriteBatch::put` will copy the data out of
-                            // this buffer into smaller exact-sized vecs.
-                            let mut task_type_bytes =
-                                TurboBincodeBuffer::with_capacity(INITIAL_ENCODE_BUFFER_CAPACITY);
                             for (task_type, task_id) in updates {
-                                task_type_bytes.clear();
-                                encode_task_type(&task_type, &mut task_type_bytes, Some(task_id))?;
+                                let hash = compute_task_type_hash(&task_type);
                                 let task_id: u32 = *task_id;
 
                                 batch
                                     .put(
                                         KeySpace::TaskCache,
-                                        WriteBuffer::Borrowed(&task_type_bytes),
+                                        WriteBuffer::Borrowed(&hash.to_le_bytes()),
                                         WriteBuffer::Borrowed(&task_id.to_le_bytes()),
                                     )
                                     .with_context(|| {
@@ -334,12 +324,21 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
                                         )
                                     })?;
                                 #[cfg(feature = "print_cache_item_size")]
-                                all_stats
-                                    .lock()
-                                    .unwrap()
-                                    .entry(task_type.get_name())
-                                    .or_default()
-                                    .add(&task_type_bytes);
+                                {
+                                    let mut task_type_bytes = TurboBincodeBuffer::new();
+                                    encode_task_type(
+                                        &task_type,
+                                        &mut task_type_bytes,
+                                        Some(TaskId::try_from(task_id).unwrap()),
+                                    )
+                                    .ok();
+                                    all_stats
+                                        .lock()
+                                        .unwrap()
+                                        .entry(task_type.get_name())
+                                        .or_default()
+                                        .add(&task_type_bytes);
+                                }
                                 max_task_id = max_task_id.max(task_id);
                             }
 
@@ -396,31 +395,35 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
                         items = task_cache_updates.iter().map(|m| m.len()).sum::<usize>()
                     )
                     .entered();
-                    // Re-use the same buffer across every `serialize_task_type` call.
-                    // `ConcurrentWriteBatch::put` will copy the data out of this buffer into
-                    // smaller exact-sized vecs.
-                    let mut task_type_bytes =
-                        TurboBincodeBuffer::with_capacity(INITIAL_ENCODE_BUFFER_CAPACITY);
                     for (task_type, task_id) in task_cache_updates.into_iter().flatten() {
-                        encode_task_type(&task_type, &mut task_type_bytes, Some(task_id))?;
+                        let hash = compute_task_type_hash(&task_type);
                         let task_id = *task_id;
 
                         batch
                             .put(
                                 KeySpace::TaskCache,
-                                WriteBuffer::Borrowed(&task_type_bytes),
+                                WriteBuffer::Borrowed(&hash.to_le_bytes()),
                                 WriteBuffer::Borrowed(&task_id.to_le_bytes()),
                             )
                             .with_context(|| {
                                 format!("Unable to write task cache {task_type:?} => {task_id}")
                             })?;
                         #[cfg(feature = "print_cache_item_size")]
-                        all_stats
-                            .lock()
-                            .unwrap()
-                            .entry(task_type.get_name())
-                            .or_default()
-                            .add(&task_type_bytes);
+                        {
+                            let mut task_type_bytes = TurboBincodeBuffer::new();
+                            encode_task_type(
+                                &task_type,
+                                &mut task_type_bytes,
+                                Some(TaskId::try_from(task_id).unwrap()),
+                            )
+                            .ok();
+                            all_stats
+                                .lock()
+                                .unwrap()
+                                .entry(task_type.get_name())
+                                .or_default()
+                                .add(&task_type_bytes);
+                        }
                         next_task_id = next_task_id.max(task_id + 1);
                     }
                 }
@@ -450,26 +453,28 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
         &self,
         tx: Option<&T::ReadTransaction<'_>>,
         task_type: &CachedTaskType,
-    ) -> Result<Option<TaskId>> {
+    ) -> Result<Vec<TaskId>> {
         let inner = &*self.inner;
         fn lookup<D: KeyValueDatabase>(
             database: &D,
             tx: &D::ReadTransaction<'_>,
             task_type: &CachedTaskType,
-        ) -> Result<Option<TaskId>> {
-            let mut task_type_bytes = TurboBincodeBuffer::new();
-            encode_task_type(task_type, &mut task_type_bytes, None)?;
-            let Some(bytes) = database.get(tx, KeySpace::TaskCache, &task_type_bytes)? else {
-                return Ok(None);
-            };
-            let bytes = bytes.borrow().try_into()?;
-            let id = TaskId::try_from(u32::from_le_bytes(bytes)).unwrap();
-            Ok(Some(id))
+        ) -> Result<Vec<TaskId>> {
+            let hash = compute_task_type_hash(task_type);
+            let buffers = database.get_multiple(tx, KeySpace::TaskCache, &hash.to_le_bytes())?;
+
+            let mut task_ids = Vec::with_capacity(buffers.len());
+            for bytes in buffers {
+                let bytes = bytes.borrow().try_into()?;
+                let id = TaskId::try_from(u32::from_le_bytes(bytes)).unwrap();
+                task_ids.push(id);
+            }
+            Ok(task_ids)
         }
         if inner.database.is_empty() {
             // Checking if the database is empty is a performance optimization
-            // to avoid serializing the task type.
-            return Ok(None);
+            // to avoid computing the hash.
+            return Ok(Vec::new());
         }
         inner
             .with_tx(tx, |tx| lookup(&self.inner.database, tx, task_type))
@@ -606,6 +611,20 @@ where
     Ok(())
 }
 
+/// Computes a deterministic 64-bit hash of a CachedTaskType for use as a TaskCache key.
+///
+/// This uses the existing TurboBincodeEncode implementation which is deterministic
+/// (function IDs from registry, bincode argument encoding), then hashes the result
+/// with XxHash64.
+fn compute_task_type_hash(task_type: &CachedTaskType) -> u64 {
+    let mut buffer = TurboBincodeBuffer::new();
+    // This should not fail for valid task types - the encoding is deterministic
+    turbo_bincode_encode_into(task_type, &mut buffer)
+        .expect("CachedTaskType encoding should not fail");
+    turbo_persistence::hash_key(&buffer.as_slice())
+}
+
+#[cfg(feature = "print_cache_item_size")]
 fn encode_task_type(
     task_type: &CachedTaskType,
     buffer: &mut TurboBincodeBuffer,

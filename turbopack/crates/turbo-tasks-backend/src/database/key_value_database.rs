@@ -7,8 +7,13 @@ use crate::database::write_batch::{
 #[derive(Debug, Clone, Copy)]
 pub enum KeySpace {
     Infra = 0,
+    /// Stores a map from TaskId->TaskStorage meta
     TaskMeta = 1,
+    /// Stores a map from TaskId->TaskStorage data
     TaskData = 2,
+    /// Stores a map forom TaskType _hash_-> TaskId
+    /// Because we are only storing the hash collisions are possible and need to be defended
+    /// against.
     TaskCache = 3,
 }
 
@@ -33,6 +38,19 @@ pub trait KeyValueDatabase {
         key_space: KeySpace,
         key: &[u8],
     ) -> Result<Option<Self::ValueBuffer<'l>>>;
+    /// Looks up a key and returns all matching values.
+    ///
+    /// Useful for keyspaces where keys are hashes and collisions are possible (e.g., TaskCache).
+    /// The default implementation returns at most one value (from `get`), but implementations
+    /// that support multiple values per key should override this.
+    fn get_multiple<'l, 'db: 'l>(
+        &'l self,
+        transaction: &'l Self::ReadTransaction<'db>,
+        key_space: KeySpace,
+        key: &[u8],
+    ) -> Result<Vec<Self::ValueBuffer<'l>>> {
+        Ok(self.get(transaction, key_space, key)?.into_iter().collect())
+    }
 
     fn batch_get<'l, 'db: 'l>(
         &'l self,
@@ -48,6 +66,7 @@ pub trait KeyValueDatabase {
         Ok(results)
     }
 
+    /// Looks up a key by its hash, confirming the match by comparing the value.
     type SerialWriteBatch<'l>: SerialWriteBatch<'l>
         = UnimplementedWriteBatch
     where

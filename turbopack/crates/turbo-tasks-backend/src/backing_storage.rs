@@ -60,6 +60,11 @@ pub trait BackingStorageSealed: 'static + Send + Sync {
             > + Send
             + Sync;
     fn start_read_transaction(&self) -> Option<Self::ReadTransaction<'_>>;
+    /// Returns all task IDs that match the given task type (hash collision candidates).
+    ///
+    /// Since TaskCache uses hash-based keys, multiple task types may hash to the same key.
+    /// The caller must verify each returned TaskId by comparing the stored task type.
+    ///
     /// # Safety
     ///
     /// `tx` must be a transaction from this BackingStorage instance.
@@ -67,7 +72,7 @@ pub trait BackingStorageSealed: 'static + Send + Sync {
         &self,
         tx: Option<&Self::ReadTransaction<'_>>,
         key: &CachedTaskType,
-    ) -> Result<Option<TaskId>>;
+    ) -> Result<Vec<TaskId>>;
     /// # Safety
     ///
     /// `tx` must be a transaction from this BackingStorage instance.
@@ -155,7 +160,7 @@ where
         &self,
         tx: Option<&Self::ReadTransaction<'_>>,
         key: &CachedTaskType,
-    ) -> Result<Option<TaskId>> {
+    ) -> Result<Vec<TaskId>> {
         match self {
             Either::Left(this) => {
                 let tx = tx.map(|tx| read_transaction_left_or_panic(tx.as_ref()));
