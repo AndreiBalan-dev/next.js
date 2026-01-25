@@ -871,8 +871,7 @@ mod tests {
         write_task_cache_entry(&db, collision_hash, task_id_3)?;
 
         // Now query using get_multiple - should return all three TaskIds
-        let tx = db.begin_read_transaction()?;
-        let results = db.get_multiple(&tx, KeySpace::TaskCache, &collision_hash.to_le_bytes())?;
+        let results = db.get_multiple(&(), KeySpace::TaskCache, &collision_hash.to_le_bytes())?;
 
         assert_eq!(
             results.len(),
@@ -909,8 +908,7 @@ mod tests {
 
         write_task_cache_entry(&db, hash, task_id)?;
 
-        let tx = db.begin_read_transaction()?;
-        let results = db.get_multiple(&tx, KeySpace::TaskCache, &hash.to_le_bytes())?;
+        let results = db.get_multiple(&(), KeySpace::TaskCache, &hash.to_le_bytes())?;
 
         assert_eq!(results.len(), 1, "Should return exactly 1 task ID");
 
@@ -938,8 +936,7 @@ mod tests {
 
         // Query for a different hash that doesn't exist
         let missing_hash: u64 = 0x99999999;
-        let tx = db.begin_read_transaction()?;
-        let results = db.get_multiple(&tx, KeySpace::TaskCache, &missing_hash.to_le_bytes())?;
+        let results = db.get_multiple(&(), KeySpace::TaskCache, &missing_hash.to_le_bytes())?;
 
         assert!(results.is_empty(), "Should return empty for missing hash");
 
