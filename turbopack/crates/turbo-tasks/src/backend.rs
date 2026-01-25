@@ -23,7 +23,6 @@ use turbo_bincode::{
     impl_decode_for_turbo_bincode_decode, impl_encode_for_turbo_bincode_encode,
 };
 use turbo_rcstr::RcStr;
-use turbo_tasks_hash::DeterministicHash;
 
 use crate::{
     RawVc, ReadCellOptions, ReadOutputOptions, ReadRef, SharedReference, TaskId, TaskIdSet,

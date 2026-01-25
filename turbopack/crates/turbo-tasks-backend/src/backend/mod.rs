@@ -1295,15 +1295,12 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         candidates: Vec<TaskId>,
         task_type: &CachedTaskType,
     ) -> Option<TaskId> {
-        // Check each candidate by loading and comparing persistent_task_type
         for candidate_id in candidates {
-            // Use ctx.task() which handles caching and restoration properly
             let task = ctx.task(candidate_id, TaskDataCategory::Data);
-            // Compare persistent_task_type
-            if let Some(stored_type) = task.get_persistent_task_type() {
-                if stored_type.as_ref() == task_type {
-                    return Some(candidate_id);
-                }
+            if let Some(stored_type) = task.get_persistent_task_type()
+                && stored_type.as_ref() == task_type
+            {
+                return Some(candidate_id);
             }
         }
         None
