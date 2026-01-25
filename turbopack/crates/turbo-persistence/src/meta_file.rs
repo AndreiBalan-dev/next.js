@@ -409,26 +409,19 @@ impl MetaFile {
             return Ok(MetaLookupResult::FamilyMiss);
         }
         let mut miss_result = MetaLookupResult::RangeMiss;
-        for entry in self.entries.iter().rev() {
-            if key_hash < entry.min_hash || key_hash > entry.max_hash {
-                continue;
+        self.for_each_candidate_entry(key_hash, amqf_cache, |sst, had_amqf_miss| {
+            if had_amqf_miss {
+                miss_result = MetaLookupResult::QuickFilterMiss;
             }
-            {
-                let amqf = entry.amqf(self, amqf_cache)?;
-                if !amqf.contains_fingerprint(key_hash) {
-                    miss_result = MetaLookupResult::QuickFilterMiss;
-                    continue;
-                }
+            let result = sst.lookup(key_hash, key, key_block_cache, value_block_cache)?;
+            if matches!(result, SstLookupResult::NotFound) {
+                Ok(None)
+            } else {
+                Ok(Some(MetaLookupResult::SstLookup(result)))
             }
-            let result =
-                entry
-                    .sst(self)?
-                    .lookup(key_hash, key, key_block_cache, value_block_cache)?;
-            if !matches!(result, SstLookupResult::NotFound) {
-                return Ok(MetaLookupResult::SstLookup(result));
-            }
-        }
-        Ok(miss_result)
+        })?
+        .ok_or(())
+        .or(Ok(miss_result))
     }
 
     /// Looks up a key and returns all matching values from this meta file.
@@ -449,23 +442,40 @@ impl MetaFile {
         if key_family != self.family {
             return Ok(());
         }
+        self.for_each_candidate_entry(key_hash, amqf_cache, |sst, _| {
+            let values = sst.lookup_all(key_hash, key, key_block_cache, value_block_cache)?;
+            results.extend(values);
+            Ok(None::<()>)
+        })?;
+        Ok(())
+    }
+
+    /// Iterates over entries that are candidates for containing the given key hash.
+    ///
+    /// For each entry that passes the hash range check and AMQF filter, calls `f` with
+    /// the SST file and a flag indicating whether any previous entry had an AMQF miss.
+    /// If `f` returns `Some(result)`, iteration stops and that result is returned.
+    fn for_each_candidate_entry<T>(
+        &self,
+        key_hash: u64,
+        amqf_cache: &AmqfCache,
+        mut f: impl FnMut(&StaticSortedFile, bool) -> Result<Option<T>>,
+    ) -> Result<Option<T>> {
+        let mut had_amqf_miss = false;
         for entry in self.entries.iter().rev() {
             if key_hash < entry.min_hash || key_hash > entry.max_hash {
                 continue;
             }
-            {
-                let amqf = entry.amqf(self, amqf_cache)?;
-                if !amqf.contains_fingerprint(key_hash) {
-                    continue;
-                }
+            let amqf = entry.amqf(self, amqf_cache)?;
+            if !amqf.contains_fingerprint(key_hash) {
+                had_amqf_miss = true;
+                continue;
             }
-            let values =
-                entry
-                    .sst(self)?
-                    .lookup_all(key_hash, key, key_block_cache, value_block_cache)?;
-            results.extend(values);
+            if let Some(result) = f(entry.sst(self)?, had_amqf_miss)? {
+                return Ok(Some(result));
+            }
         }
-        Ok(())
+        Ok(None)
     }
 
     pub fn batch_lookup<K: QueryKey>(

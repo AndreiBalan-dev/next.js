@@ -15,7 +15,7 @@ use turbo_persistence::{
 use turbo_tasks::{JoinHandle, message_queue::TimingEvent, spawn, turbo_tasks};
 
 use crate::database::{
-    key_value_database::{KeySpace, KeyValueDatabase},
+    key_value_database::{KeySpace, KeyValueDatabase, LookupSemantics},
     turbo::parallel_scheduler::TurboTasksParallelScheduler,
     write_batch::{BaseWriteBatch, ConcurrentWriteBatch, WriteBatch, WriteBuffer},
 };
@@ -82,6 +82,11 @@ impl KeyValueDatabase for TurboKeyValueDatabase {
         key_space: KeySpace,
         key: &[u8],
     ) -> Result<Option<Self::ValueBuffer<'l>>> {
+        debug_assert!(
+            key_space.lookup_semantics() != LookupSemantics::MultipleValues,
+            "KeySpace {:?} may have multiple values - use get_multiple instead",
+            key_space
+        );
         self.db.get(key_space as usize, &key)
     }
 
@@ -100,6 +105,11 @@ impl KeyValueDatabase for TurboKeyValueDatabase {
         key_space: KeySpace,
         key: &[u8],
     ) -> Result<SmallVec<[Self::ValueBuffer<'l>; 1]>> {
+        debug_assert!(
+            key_space.lookup_semantics() != LookupSemantics::SingleValue,
+            "KeySpace {:?} has single values - use get instead of get_multiple",
+            key_space
+        );
         self.db.get_multiple(key_space as usize, &key)
     }
 

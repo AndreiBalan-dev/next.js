@@ -5,17 +5,44 @@ use crate::database::write_batch::{
     ConcurrentWriteBatch, SerialWriteBatch, UnimplementedWriteBatch, WriteBatch,
 };
 
+/// Describes the lookup semantics for a keyspace.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LookupSemantics {
+    /// Single value per key. `get` returns the newest value.
+    /// Using `get_multiple` is allowed but unnecessary.
+    SingleValue,
+    /// Multiple values may exist per key (e.g., hash collisions).
+    /// Callers MUST use `get_multiple` and verify candidates.
+    MultipleValues,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub enum KeySpace {
+    /// Infrastructure data. Single value per key, use `get`.
     Infra = 0,
-    /// Stores a map from TaskId->TaskStorage meta
+    /// Stores a map from TaskId->TaskStorage meta. Single value per key, use `get`.
     TaskMeta = 1,
-    /// Stores a map from TaskId->TaskStorage data
+    /// Stores a map from TaskId->TaskStorage data. Single value per key, use `get`.
     TaskData = 2,
-    /// Stores a map forom TaskType _hash_-> TaskId
-    /// Because we are only storing the hash collisions are possible and need to be defended
-    /// against.
+    /// Stores a map from TaskType _hash_ -> TaskId.
+    /// **Multiple values possible due to hash collisions.**
+    /// MUST use `get_multiple` and verify candidates match the actual TaskType.
     TaskCache = 3,
+}
+
+impl KeySpace {
+    /// Returns the lookup semantics for this keyspace.
+    ///
+    /// This indicates whether the keyspace expects single or multiple values per key,
+    /// which determines whether callers should use `get` or `get_multiple`.
+    pub fn lookup_semantics(&self) -> LookupSemantics {
+        match self {
+            KeySpace::Infra | KeySpace::TaskMeta | KeySpace::TaskData => {
+                LookupSemantics::SingleValue
+            }
+            KeySpace::TaskCache => LookupSemantics::MultipleValues,
+        }
+    }
 }
 
 pub trait KeyValueDatabase {

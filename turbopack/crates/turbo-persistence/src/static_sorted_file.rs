@@ -144,23 +144,9 @@ impl StaticSortedFile {
         key_block_cache: &BlockCache,
         value_block_cache: &BlockCache,
     ) -> Result<SstLookupResult> {
-        let mut current_block = self.meta.block_count - 1;
-        loop {
-            let block = self.get_key_block(current_block, key_block_cache)?;
-            let mut block = &block[..];
-            let block_type = block.read_u8()?;
-            match block_type {
-                BLOCK_TYPE_INDEX => {
-                    current_block = self.lookup_index_block(block, key_hash)?;
-                }
-                BLOCK_TYPE_KEY => {
-                    return self.lookup_key_block(block, key_hash, key, value_block_cache);
-                }
-                _ => {
-                    bail!("Invalid block type");
-                }
-            }
-        }
+        self.find_key_block(key_hash, key_block_cache, |block| {
+            self.lookup_key_block(block, key_hash, key, value_block_cache)
+        })
     }
 
     /// Looks up a key and returns all matching values.
@@ -175,6 +161,19 @@ impl StaticSortedFile {
         key_block_cache: &BlockCache,
         value_block_cache: &BlockCache,
     ) -> Result<SmallVec<[LookupValue; 1]>> {
+        self.find_key_block(key_hash, key_block_cache, |block| {
+            self.lookup_key_block_all(block, key_hash, key, value_block_cache)
+        })
+    }
+
+    /// Traverses index blocks to find the key block containing the given hash,
+    /// then calls `f` with the key block data.
+    fn find_key_block<T>(
+        &self,
+        key_hash: u64,
+        key_block_cache: &BlockCache,
+        f: impl FnOnce(&[u8]) -> Result<T>,
+    ) -> Result<T> {
         let mut current_block = self.meta.block_count - 1;
         loop {
             let block = self.get_key_block(current_block, key_block_cache)?;
@@ -185,7 +184,7 @@ impl StaticSortedFile {
                     current_block = self.lookup_index_block(block, key_hash)?;
                 }
                 BLOCK_TYPE_KEY => {
-                    return self.lookup_key_block_all(block, key_hash, key, value_block_cache);
+                    return f(block);
                 }
                 _ => {
                     bail!("Invalid block type");

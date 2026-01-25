@@ -14,7 +14,6 @@ use std::{
 };
 
 use bincode::{Decode, Encode};
-use smallvec::SmallVec;
 use turbo_tasks::{
     CellId, FxIndexMap, TaskExecutionReason, TaskId, TaskPriority, TurboTasksBackendApi,
     TypedSharedReference, backend::CachedTaskType,
@@ -92,10 +91,12 @@ pub trait ExecuteContext<'e>: Sized {
     fn suspending_requested(&self) -> bool;
     fn should_track_dependencies(&self) -> bool;
     fn should_track_activeness(&self) -> bool;
-    /// Look up candidate TaskIds from the backing storage for a given task type.
-    /// Uses hash-based lookup which may return multiple candidates due to hash collisions.
-    /// Caller must verify each candidate by comparing the stored persistent_task_type.
-    fn task_candidates(&mut self, task_type: &CachedTaskType) -> SmallVec<[TaskId; 1]>;
+    /// Look up a TaskId from the backing storage for a given task type.
+    ///
+    /// Uses hash-based lookup which may return multiple candidates due to hash collisions,
+    /// then verifies each candidate by comparing the stored `persistent_task_type`.
+    /// Returns `Some(task_id)` if a matching task is found, `None` otherwise.
+    fn task_by_type(&mut self, task_type: &CachedTaskType) -> Option<TaskId>;
 }
 
 pub trait ChildExecuteContext<'e>: Send + Sized {
@@ -630,19 +631,33 @@ where
         self.backend.should_track_activeness()
     }
 
-    fn task_candidates(&mut self, task_type: &CachedTaskType) -> SmallVec<[TaskId; 1]> {
+    fn task_by_type(&mut self, task_type: &CachedTaskType) -> Option<TaskId> {
         // Ensure we have a transaction (this will be reused by subsequent task() calls)
         if !self.ensure_transaction() {
-            return SmallVec::new();
+            return None;
         }
         let tx = self.get_tx();
+
+        // Get candidates from backing storage (hash-based lookup may return multiple)
         // Safety: `tx` is a valid transaction from `self.backend.backing_storage`.
-        unsafe {
+        let candidates = unsafe {
             self.backend
                 .backing_storage
                 .lookup_task_candidate(tx, task_type)
                 .expect("Failed to lookup task ids")
+        };
+
+        // Verify each candidate by comparing the stored persistent_task_type.
+        // Only rarely is there more than one candidate, so no need for parallelization.
+        for candidate_id in candidates {
+            let task = self.task(candidate_id, TaskDataCategory::Data);
+            if let Some(stored_type) = task.get_persistent_task_type()
+                && stored_type.as_ref() == task_type
+            {
+                return Some(candidate_id);
+            }
         }
+        None
     }
 }
 

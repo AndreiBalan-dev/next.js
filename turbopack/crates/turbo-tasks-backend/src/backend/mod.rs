@@ -1285,27 +1285,6 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         self.idle_end_event.notify(usize::MAX);
     }
 
-    /// Attempts to find an existing persistent task ID from the given candidates.
-    ///
-    /// Verifies each candidate by loading and comparing stored `persistent_task_type`.
-    /// Returns `Some(task_id)` if a matching task is found, `None` otherwise.
-    fn try_get_persistent_task_id(
-        &self,
-        ctx: &mut impl ExecuteContext<'_>,
-        candidates: SmallVec<[TaskId; 1]>,
-        task_type: &CachedTaskType,
-    ) -> Option<TaskId> {
-        for candidate_id in candidates {
-            let task = ctx.task(candidate_id, TaskDataCategory::Data);
-            if let Some(stored_type) = task.get_persistent_task_type()
-                && stored_type.as_ref() == task_type
-            {
-                return Some(candidate_id);
-            }
-        }
-        None
-    }
-
     fn get_or_create_persistent_task(
         &self,
         task_type: CachedTaskType,
@@ -1328,15 +1307,8 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         // Create a single ExecuteContext for both lookup and connect_child
         let mut ctx = self.execute_context(turbo_tasks);
 
-        // Get candidate task IDs from backing storage (hash-based lookup may return multiple)
-        // The ExecuteContext handles the transaction which will be reused by task() calls
-        let candidates = ctx.task_candidates(&task_type);
-
-        let found_task_id = if !candidates.is_empty() {
-            self.try_get_persistent_task_id(&mut ctx, candidates, &task_type)
-        } else {
-            None
-        };
+        // Look up task from backing storage (handles hash-based lookup and verification)
+        let found_task_id = ctx.task_by_type(&task_type);
 
         let (task_id, task_type) = if let Some(task_id) = found_task_id {
             // Task exists in backing storage
@@ -1354,26 +1326,28 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
         } else {
             // Task doesn't exist in memory cache or backing storage
             // So we might need to create a new task
-            let (task_id, mut task_type) = match raw_entry(&self.task_cache, &task_type) {
+            let (task_id, task_type) = match raw_entry(&self.task_cache, &task_type) {
                 RawEntry::Occupied(e) => {
+                    // Another thread beat us to creating this task - use their task_id.
+                    // They will handle logging to persisted_task_cache_log.
                     let task_id = *e.get();
                     drop(e);
                     self.track_cache_hit(&task_type);
                     (task_id, ArcOrOwned::Owned(task_type))
                 }
                 RawEntry::Vacant(e) => {
+                    // We're creating a new task.
                     let task_type = Arc::new(task_type);
                     let task_id = self.persisted_task_id_factory.get();
                     e.insert(task_type.clone(), task_id);
+                    // insert() consumes e, releasing the lock
                     self.track_cache_miss(&task_type);
+                    if let Some(log) = &self.persisted_task_cache_log {
+                        log.lock(task_id).push((task_type.clone(), task_id));
+                    }
                     (task_id, ArcOrOwned::Arc(task_type))
                 }
             };
-            if let Some(log) = &self.persisted_task_cache_log {
-                let task_type_arc: Arc<CachedTaskType> = Arc::from(task_type);
-                log.lock(task_id).push((task_type_arc.clone(), task_id));
-                task_type = ArcOrOwned::Arc(task_type_arc);
-            }
             (task_id, task_type)
         };
 
