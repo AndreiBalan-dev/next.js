@@ -8,6 +8,7 @@ use std::{
 
 use anyhow::{Ok, Result};
 use parking_lot::Mutex;
+use smallvec::SmallVec;
 use turbo_persistence::{
     ArcSlice, CompactConfig, KeyBase, StoreKey, TurboPersistence, ValueBuffer,
 };
@@ -98,7 +99,7 @@ impl KeyValueDatabase for TurboKeyValueDatabase {
         _transaction: &'l Self::ReadTransaction<'db>,
         key_space: KeySpace,
         key: &[u8],
-    ) -> Result<Vec<Self::ValueBuffer<'l>>> {
+    ) -> Result<SmallVec<[Self::ValueBuffer<'l>; 1]>> {
         self.db.get_multiple(key_space as usize, &key)
     }
 

@@ -14,6 +14,7 @@ use std::{
 };
 
 use bincode::{Decode, Encode};
+use smallvec::SmallVec;
 use turbo_tasks::{
     CellId, FxIndexMap, TaskExecutionReason, TaskId, TaskPriority, TurboTasksBackendApi,
     TypedSharedReference, backend::CachedTaskType,
@@ -94,7 +95,7 @@ pub trait ExecuteContext<'e>: Sized {
     /// Look up candidate TaskIds from the backing storage for a given task type.
     /// Uses hash-based lookup which may return multiple candidates due to hash collisions.
     /// Caller must verify each candidate by comparing the stored persistent_task_type.
-    fn lookup_task_cache_candidates(&mut self, task_type: &CachedTaskType) -> Vec<TaskId>;
+    fn task_candidates(&mut self, task_type: &CachedTaskType) -> SmallVec<[TaskId; 1]>;
 }
 
 pub trait ChildExecuteContext<'e>: Send + Sized {
@@ -629,22 +630,17 @@ where
         self.backend.should_track_activeness()
     }
 
-    fn lookup_task_cache_candidates(&mut self, task_type: &CachedTaskType) -> Vec<TaskId> {
-        let check_backing_storage =
-            self.backend.should_restore() && self.backend.local_is_partial.load(Ordering::Acquire);
-        if !check_backing_storage {
-            return Vec::new();
-        }
+    fn task_candidates(&mut self, task_type: &CachedTaskType) -> SmallVec<[TaskId; 1]> {
         // Ensure we have a transaction (this will be reused by subsequent task() calls)
         if !self.ensure_transaction() {
-            return Vec::new();
+            return SmallVec::new();
         }
         let tx = self.get_tx();
         // Safety: `tx` is a valid transaction from `self.backend.backing_storage`.
         unsafe {
             self.backend
                 .backing_storage
-                .forward_lookup_task_cache(tx, task_type)
+                .lookup_task_candidate(tx, task_type)
                 .expect("Failed to lookup task ids")
         }
     }

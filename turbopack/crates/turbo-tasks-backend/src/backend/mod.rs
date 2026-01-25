@@ -1292,7 +1292,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
     fn try_get_persistent_task_id(
         &self,
         ctx: &mut impl ExecuteContext<'_>,
-        candidates: Vec<TaskId>,
+        candidates: SmallVec<[TaskId; 1]>,
         task_type: &CachedTaskType,
     ) -> Option<TaskId> {
         for candidate_id in candidates {
@@ -1330,7 +1330,7 @@ impl<B: BackingStorage> TurboTasksBackendInner<B> {
 
         // Get candidate task IDs from backing storage (hash-based lookup may return multiple)
         // The ExecuteContext handles the transaction which will be reused by task() calls
-        let candidates = ctx.lookup_task_cache_candidates(&task_type);
+        let candidates = ctx.task_candidates(&task_type);
 
         let found_task_id = if !candidates.is_empty() {
             self.try_get_persistent_task_id(&mut ctx, candidates, &task_type)

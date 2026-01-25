@@ -17,6 +17,7 @@ use either::Either;
 use memmap2::{Mmap, MmapOptions};
 use quick_cache::sync::GuardResult;
 use rustc_hash::FxHasher;
+use smallvec::SmallVec;
 use turbo_bincode::turbo_bincode_decode;
 
 use crate::{
@@ -443,7 +444,7 @@ impl MetaFile {
         amqf_cache: &AmqfCache,
         key_block_cache: &BlockCache,
         value_block_cache: &BlockCache,
-        results: &mut Vec<LookupValue>,
+        results: &mut SmallVec<[LookupValue; 1]>,
     ) -> Result<()> {
         if key_family != self.family {
             return Ok(());

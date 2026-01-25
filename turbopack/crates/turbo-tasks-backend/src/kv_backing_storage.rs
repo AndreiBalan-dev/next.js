@@ -6,6 +6,7 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+use smallvec::SmallVec;
 use turbo_bincode::{
     TurboBincodeBuffer, new_turbo_bincode_decoder, turbo_bincode_decode, turbo_bincode_encode,
     turbo_bincode_encode_into,
@@ -449,21 +450,21 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
         self.inner.database.begin_read_transaction().ok()
     }
 
-    unsafe fn forward_lookup_task_cache(
+    unsafe fn lookup_task_candidate(
         &self,
         tx: Option<&T::ReadTransaction<'_>>,
         task_type: &CachedTaskType,
-    ) -> Result<Vec<TaskId>> {
+    ) -> Result<SmallVec<[TaskId; 1]>> {
         let inner = &*self.inner;
         fn lookup<D: KeyValueDatabase>(
             database: &D,
             tx: &D::ReadTransaction<'_>,
             task_type: &CachedTaskType,
-        ) -> Result<Vec<TaskId>> {
+        ) -> Result<SmallVec<[TaskId; 1]>> {
             let hash = compute_task_type_hash(task_type);
             let buffers = database.get_multiple(tx, KeySpace::TaskCache, &hash.to_le_bytes())?;
 
-            let mut task_ids = Vec::with_capacity(buffers.len());
+            let mut task_ids = SmallVec::with_capacity(buffers.len());
             for bytes in buffers {
                 let bytes = bytes.borrow().try_into()?;
                 let id = TaskId::try_from(u32::from_le_bytes(bytes)).unwrap();
@@ -474,7 +475,7 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
         if inner.database.is_empty() {
             // Checking if the database is empty is a performance optimization
             // to avoid computing the hash.
-            return Ok(Vec::new());
+            return Ok(SmallVec::new());
         }
         inner
             .with_tx(tx, |tx| lookup(&self.inner.database, tx, task_type))
@@ -806,4 +807,143 @@ where
 
         Ok(result)
     })
+}
+#[cfg(test)]
+mod tests {
+    use std::borrow::Borrow;
+
+    use turbo_tasks::TaskId;
+
+    use super::*;
+    use crate::database::{
+        key_value_database::KeyValueDatabase,
+        turbo::TurboKeyValueDatabase,
+        write_batch::{BaseWriteBatch, ConcurrentWriteBatch, WriteBatch, WriteBuffer},
+    };
+
+    /// Helper to write to the database using the concurrent batch API.
+    fn write_task_cache_entry(
+        db: &TurboKeyValueDatabase,
+        hash: u64,
+        task_id: TaskId,
+    ) -> Result<()> {
+        let batch = db.write_batch()?;
+        match batch {
+            WriteBatch::Concurrent(concurrent, _) => {
+                concurrent.put(
+                    KeySpace::TaskCache,
+                    WriteBuffer::Borrowed(&hash.to_le_bytes()),
+                    WriteBuffer::Borrowed(&(*task_id).to_le_bytes()),
+                )?;
+                concurrent.commit()?;
+            }
+            WriteBatch::Serial(_) => {
+                panic!("Expected concurrent batch");
+            }
+        }
+        Ok(())
+    }
+
+    /// Tests that `get_multiple` correctly returns multiple TaskIds when the same hash key
+    /// is used (simulating a hash collision scenario).
+    ///
+    /// This is a lower-level test that verifies the database layer correctly handles
+    /// the case where multiple task IDs are stored under the same hash key.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_hash_collision_returns_multiple_candidates() -> Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let path = tempdir.path();
+
+        // Use is_short_session=true to disable background compaction (which requires turbo-tasks
+        // context)
+        let db = TurboKeyValueDatabase::new(path.to_path_buf(), false, true)?;
+
+        // Simulate a hash collision by writing multiple TaskIds with the same hash key
+        let collision_hash: u64 = 0xDEADBEEF;
+        let task_id_1 = TaskId::try_from(100u32).unwrap();
+        let task_id_2 = TaskId::try_from(200u32).unwrap();
+        let task_id_3 = TaskId::try_from(300u32).unwrap();
+
+        // Write three task IDs under the same hash key (simulating collision)
+        // Each write creates a new SST file, so all three will be returned by get_multiple
+        write_task_cache_entry(&db, collision_hash, task_id_1)?;
+        write_task_cache_entry(&db, collision_hash, task_id_2)?;
+        write_task_cache_entry(&db, collision_hash, task_id_3)?;
+
+        // Now query using get_multiple - should return all three TaskIds
+        let tx = db.begin_read_transaction()?;
+        let results = db.get_multiple(&tx, KeySpace::TaskCache, &collision_hash.to_le_bytes())?;
+
+        assert_eq!(
+            results.len(),
+            3,
+            "Should return all 3 task IDs for the colliding hash"
+        );
+
+        // Convert results to TaskIds and verify all three are present
+        let mut found_ids: Vec<TaskId> = results
+            .iter()
+            .map(|bytes| {
+                let bytes: [u8; 4] = Borrow::<[u8]>::borrow(bytes).try_into().unwrap();
+                TaskId::try_from(u32::from_le_bytes(bytes)).unwrap()
+            })
+            .collect();
+        found_ids.sort_by_key(|id| **id);
+
+        assert_eq!(found_ids, vec![task_id_1, task_id_2, task_id_3]);
+
+        db.shutdown()?;
+        Ok(())
+    }
+
+    /// Tests that a single TaskId lookup still works correctly (the common case).
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_single_task_id_lookup() -> Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let path = tempdir.path();
+
+        let db = TurboKeyValueDatabase::new(path.to_path_buf(), false, false)?;
+
+        let hash: u64 = 0x12345678;
+        let task_id = TaskId::try_from(42u32).unwrap();
+
+        write_task_cache_entry(&db, hash, task_id)?;
+
+        let tx = db.begin_read_transaction()?;
+        let results = db.get_multiple(&tx, KeySpace::TaskCache, &hash.to_le_bytes())?;
+
+        assert_eq!(results.len(), 1, "Should return exactly 1 task ID");
+
+        let bytes: [u8; 4] = Borrow::<[u8]>::borrow(&results[0]).try_into().unwrap();
+        let found_id = TaskId::try_from(u32::from_le_bytes(bytes)).unwrap();
+        assert_eq!(found_id, task_id);
+
+        db.shutdown()?;
+        Ok(())
+    }
+
+    /// Tests that querying a non-existent hash returns an empty result.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_missing_hash_returns_empty() -> Result<()> {
+        let tempdir = tempfile::tempdir()?;
+        let path = tempdir.path();
+
+        let db = TurboKeyValueDatabase::new(path.to_path_buf(), false, false)?;
+
+        // Write something to a different hash
+        let hash: u64 = 0x11111111;
+        let task_id = TaskId::try_from(1u32).unwrap();
+
+        write_task_cache_entry(&db, hash, task_id)?;
+
+        // Query for a different hash that doesn't exist
+        let missing_hash: u64 = 0x99999999;
+        let tx = db.begin_read_transaction()?;
+        let results = db.get_multiple(&tx, KeySpace::TaskCache, &missing_hash.to_le_bytes())?;
+
+        assert!(results.is_empty(), "Should return empty for missing hash");
+
+        db.shutdown()?;
+        Ok(())
+    }
 }

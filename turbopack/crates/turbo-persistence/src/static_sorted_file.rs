@@ -11,6 +11,7 @@ use byteorder::{BE, ReadBytesExt};
 use memmap2::Mmap;
 use quick_cache::sync::GuardResult;
 use rustc_hash::FxHasher;
+use smallvec::SmallVec;
 
 use crate::{
     QueryKey,
@@ -173,7 +174,7 @@ impl StaticSortedFile {
         key: &K,
         key_block_cache: &BlockCache,
         value_block_cache: &BlockCache,
-    ) -> Result<Vec<LookupValue>> {
+    ) -> Result<SmallVec<[LookupValue; 1]>> {
         let mut current_block = self.meta.block_count - 1;
         loop {
             let block = self.get_key_block(current_block, key_block_cache)?;
@@ -251,32 +252,15 @@ impl StaticSortedFile {
         let offsets = &block[..entry_count * 4];
         let entries = &block[entry_count * 4..];
 
-        let mut l = 0;
-        let mut r = entry_count;
-        // binary search for the key
-        while l < r {
-            let m = (l + r) / 2;
-            let GetKeyEntryResult {
-                hash: mid_hash,
-                key: mid_key,
-                ty,
-                val: mid_val,
-            } = get_key_entry(offsets, entries, entry_count, m)?;
-            match key_hash.cmp(&mid_hash).then_with(|| key.cmp(mid_key)) {
-                Ordering::Less => {
-                    r = m;
-                }
-                Ordering::Equal => {
-                    return Ok(self
-                        .handle_key_match(ty, mid_val, value_block_cache)?
-                        .into());
-                }
-                Ordering::Greater => {
-                    l = m + 1;
-                }
-            }
-        }
-        Ok(SstLookupResult::NotFound)
+        let Some(found_idx) =
+            Self::binary_search_key_block(offsets, entries, entry_count, key_hash, key)?
+        else {
+            return Ok(SstLookupResult::NotFound);
+        };
+
+        let GetKeyEntryResult { ty, val, .. } =
+            get_key_entry(offsets, entries, entry_count, found_idx)?;
+        Ok(self.handle_key_match(ty, val, value_block_cache)?.into())
     }
 
     /// Looks up all entries with a matching key in a key block.
@@ -290,13 +274,58 @@ impl StaticSortedFile {
         key_hash: u64,
         key: &K,
         value_block_cache: &BlockCache,
-    ) -> Result<Vec<LookupValue>> {
+    ) -> Result<SmallVec<[LookupValue; 1]>> {
         let entry_count = block.read_u24::<BE>()? as usize;
         let offsets = &block[..entry_count * 4];
         let entries = &block[entry_count * 4..];
 
-        // Binary search to find any entry with matching key
-        // Note: entries are sorted by (hash, key), so entries with same key are contiguous
+        let Some(found_idx) =
+            Self::binary_search_key_block(offsets, entries, entry_count, key_hash, key)?
+        else {
+            return Ok(SmallVec::new());
+        };
+
+        // Found an entry with matching key, now collect all entries with this key.
+        // First, find the start of entries with this key (entries are sorted by (hash, key)).
+        let mut start = found_idx;
+        while start > 0 {
+            let GetKeyEntryResult {
+                hash,
+                key: entry_key,
+                ..
+            } = get_key_entry(offsets, entries, entry_count, start - 1)?;
+            if hash != key_hash || key.cmp(entry_key) != Ordering::Equal {
+                break;
+            }
+            start -= 1;
+        }
+
+        // Collect all entries with matching key
+        let mut results = SmallVec::new();
+        for i in start..entry_count {
+            let GetKeyEntryResult {
+                hash,
+                key: entry_key,
+                ty,
+                val,
+            } = get_key_entry(offsets, entries, entry_count, i)?;
+            if hash != key_hash || key.cmp(entry_key) != Ordering::Equal {
+                break;
+            }
+            results.push(self.handle_key_match(ty, val, value_block_cache)?);
+        }
+
+        Ok(results)
+    }
+
+    /// Binary search for a key in a key block. Returns the index of a matching entry, or None.
+    fn binary_search_key_block<K: QueryKey>(
+        offsets: &[u8],
+        entries: &[u8],
+        entry_count: usize,
+        key_hash: u64,
+        key: &K,
+    ) -> Result<Option<usize>> {
         let mut l = 0;
         let mut r = entry_count;
         while l < r {
@@ -307,51 +336,12 @@ impl StaticSortedFile {
                 ..
             } = get_key_entry(offsets, entries, entry_count, m)?;
             match key_hash.cmp(&mid_hash).then_with(|| key.cmp(mid_key)) {
-                Ordering::Less => {
-                    r = m;
-                }
-                Ordering::Equal => {
-                    // Found an entry with matching key, now collect all entries with this key
-                    // First, find the start of entries with this key
-                    let mut start = m;
-                    while start > 0 {
-                        let GetKeyEntryResult {
-                            hash,
-                            key: entry_key,
-                            ..
-                        } = get_key_entry(offsets, entries, entry_count, start - 1)?;
-                        if hash != key_hash || key.cmp(entry_key) != Ordering::Equal {
-                            break;
-                        }
-                        start -= 1;
-                    }
-
-                    // Collect all entries with matching key
-                    let mut results = Vec::new();
-                    for i in start..entry_count {
-                        let GetKeyEntryResult {
-                            hash,
-                            key: entry_key,
-                            ty,
-                            val,
-                        } = get_key_entry(offsets, entries, entry_count, i)?;
-                        if hash != key_hash || key.cmp(entry_key) != Ordering::Equal {
-                            // Past the entries with matching key
-                            break;
-                        }
-
-                        let value = self.handle_key_match(ty, val, value_block_cache)?;
-                        results.push(value);
-                    }
-
-                    return Ok(results);
-                }
-                Ordering::Greater => {
-                    l = m + 1;
-                }
+                Ordering::Less => r = m,
+                Ordering::Equal => return Ok(Some(m)),
+                Ordering::Greater => l = m + 1,
             }
         }
-        Ok(Vec::new())
+        Ok(None)
     }
 
     /// Handles a key match by looking up the value.

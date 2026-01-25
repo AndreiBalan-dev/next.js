@@ -1,4 +1,5 @@
 use anyhow::Result;
+use smallvec::SmallVec;
 
 use crate::database::write_batch::{
     ConcurrentWriteBatch, SerialWriteBatch, UnimplementedWriteBatch, WriteBatch,
@@ -48,7 +49,7 @@ pub trait KeyValueDatabase {
         transaction: &'l Self::ReadTransaction<'db>,
         key_space: KeySpace,
         key: &[u8],
-    ) -> Result<Vec<Self::ValueBuffer<'l>>> {
+    ) -> Result<SmallVec<[Self::ValueBuffer<'l>; 1]>> {
         Ok(self.get(transaction, key_space, key)?.into_iter().collect())
     }
 

@@ -1413,11 +1413,21 @@ impl<S: ParallelScheduler, const FAMILIES: usize> TurboPersistence<S, FAMILIES> 
     ///
     /// Note: This method does NOT deduplicate values. If the same key-value pair exists
     /// in multiple SST files (e.g., before compaction), it will be returned multiple times.
-    pub fn get_multiple<K: QueryKey>(&self, family: usize, key: &K) -> Result<Vec<ArcSlice<u8>>> {
+    pub fn get_multiple<K: QueryKey>(
+        &self,
+        family: usize,
+        key: &K,
+    ) -> Result<SmallVec<[ArcSlice<u8>; 1]>> {
         debug_assert!(family < FAMILIES, "Family index out of bounds");
+        let span = tracing::trace_span!(
+            "database read multiple",
+            name = family,
+            result_count = tracing::field::Empty
+        )
+        .entered();
         let hash = hash_key(key);
         let inner = self.inner.read();
-        let mut results: Vec<LookupValue> = Vec::new();
+        let mut results: SmallVec<[LookupValue; 1]> = SmallVec::new();
 
         for meta in inner.meta_files.iter().rev() {
             meta.lookup_all(
@@ -1434,7 +1444,7 @@ impl<S: ParallelScheduler, const FAMILIES: usize> TurboPersistence<S, FAMILIES> 
         inner.accessed_key_hashes[family].insert(hash);
 
         // Convert LookupValue to ArcSlice, filtering out Deleted entries and handling blobs
-        let mut output = Vec::with_capacity(results.len());
+        let mut output = SmallVec::with_capacity(results.len());
         for result in results {
             match result {
                 LookupValue::Deleted => {
@@ -1450,6 +1460,7 @@ impl<S: ParallelScheduler, const FAMILIES: usize> TurboPersistence<S, FAMILIES> 
             }
         }
 
+        span.record("result_count", output.len());
         Ok(output)
     }
 
