@@ -396,6 +396,11 @@ impl MetaFile {
         &self.obsolete_sst_files
     }
 
+    /// Looks up a key in this meta file.
+    ///
+    /// If `find_all` is false, returns after finding the first match.
+    /// If `find_all` is true, returns all entries with the same key from all SST files
+    /// (useful for keyspaces where keys are hashes and collisions are possible).
     pub fn lookup<K: QueryKey>(
         &self,
         key_family: u32,
@@ -404,64 +409,16 @@ impl MetaFile {
         amqf_cache: &AmqfCache,
         key_block_cache: &BlockCache,
         value_block_cache: &BlockCache,
+        find_all: bool,
     ) -> Result<MetaLookupResult> {
         if key_family != self.family {
             return Ok(MetaLookupResult::FamilyMiss);
         }
+
         let mut miss_result = MetaLookupResult::RangeMiss;
-        self.for_each_candidate_entry(key_hash, amqf_cache, |sst, had_amqf_miss| {
-            if had_amqf_miss {
-                miss_result = MetaLookupResult::QuickFilterMiss;
-            }
-            let result = sst.lookup(key_hash, key, key_block_cache, value_block_cache)?;
-            if matches!(result, SstLookupResult::NotFound) {
-                Ok(None)
-            } else {
-                Ok(Some(MetaLookupResult::SstLookup(result)))
-            }
-        })?
-        .ok_or(())
-        .or(Ok(miss_result))
-    }
-
-    /// Looks up a key and returns all matching values from this meta file.
-    ///
-    /// This is useful for keyspaces where keys are hashes and collisions are possible.
-    /// Unlike `lookup`, which returns only the first match, this method returns all
-    /// entries with the same key from all SST files in this meta file.
-    pub fn lookup_all<K: QueryKey>(
-        &self,
-        key_family: u32,
-        key_hash: u64,
-        key: &K,
-        amqf_cache: &AmqfCache,
-        key_block_cache: &BlockCache,
-        value_block_cache: &BlockCache,
-        results: &mut SmallVec<[LookupValue; 1]>,
-    ) -> Result<()> {
-        if key_family != self.family {
-            return Ok(());
-        }
-        self.for_each_candidate_entry(key_hash, amqf_cache, |sst, _| {
-            let values = sst.lookup_all(key_hash, key, key_block_cache, value_block_cache)?;
-            results.extend(values);
-            Ok(None::<()>)
-        })?;
-        Ok(())
-    }
-
-    /// Iterates over entries that are candidates for containing the given key hash.
-    ///
-    /// For each entry that passes the hash range check and AMQF filter, calls `f` with
-    /// the SST file and a flag indicating whether any previous entry had an AMQF miss.
-    /// If `f` returns `Some(result)`, iteration stops and that result is returned.
-    fn for_each_candidate_entry<T>(
-        &self,
-        key_hash: u64,
-        amqf_cache: &AmqfCache,
-        mut f: impl FnMut(&StaticSortedFile, bool) -> Result<Option<T>>,
-    ) -> Result<Option<T>> {
         let mut had_amqf_miss = false;
+        let mut all_results: SmallVec<[LookupValue; 1]> = SmallVec::new();
+
         for entry in self.entries.iter().rev() {
             if key_hash < entry.min_hash || key_hash > entry.max_hash {
                 continue;
@@ -471,11 +428,38 @@ impl MetaFile {
                 had_amqf_miss = true;
                 continue;
             }
-            if let Some(result) = f(entry.sst(self)?, had_amqf_miss)? {
-                return Ok(Some(result));
+            if had_amqf_miss {
+                miss_result = MetaLookupResult::QuickFilterMiss;
+            }
+
+            let result = entry.sst(self)?.lookup(
+                key_hash,
+                key,
+                key_block_cache,
+                value_block_cache,
+                find_all,
+            )?;
+
+            match result {
+                SstLookupResult::NotFound => {}
+                SstLookupResult::Found(values) => {
+                    if !find_all {
+                        // Return immediately with the first result
+                        return Ok(MetaLookupResult::SstLookup(SstLookupResult::Found(values)));
+                    }
+                    // Accumulate results
+                    all_results.extend(values);
+                }
             }
         }
-        Ok(None)
+
+        if find_all && !all_results.is_empty() {
+            return Ok(MetaLookupResult::SstLookup(SstLookupResult::Found(
+                all_results,
+            )));
+        }
+
+        Ok(miss_result)
     }
 
     pub fn batch_lookup<K: QueryKey>(
@@ -551,16 +535,20 @@ impl MetaFile {
                     &keys[*index],
                     key_block_cache,
                     value_block_cache,
+                    false, // find_all: batch_lookup returns first match per key
                 )?;
-                if let SstLookupResult::Found(value) = sst_result {
-                    *result = Some(value);
-                    *empty_cells -= 1;
-                    #[cfg(feature = "stats")]
-                    {
-                        lookup_result.hits += 1;
-                    }
-                    if *empty_cells == 0 {
-                        return Ok(lookup_result);
+                if let SstLookupResult::Found(mut values) = sst_result {
+                    // batch_lookup expects single values; take the first one
+                    if let Some(value) = values.pop() {
+                        *result = Some(value);
+                        *empty_cells -= 1;
+                        #[cfg(feature = "stats")]
+                        {
+                            lookup_result.hits += 1;
+                        }
+                        if *empty_cells == 0 {
+                            return Ok(lookup_result);
+                        }
                     }
                 } else {
                     #[cfg(feature = "stats")]
