@@ -308,7 +308,7 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
                         |updates| {
                             let _span = _span.clone().entered();
                             let mut max_task_id = 0;
-                            // Re-use the same buffer across every `serialize_task_type` call in
+                            // Re-use the same buffer across every `compute_task_type_hash` call in
                             // this chunk. `ConcurrentWriteBatch::put` will copy the data out of
                             // this buffer into smaller exact-sized vecs.
                             let mut task_type_bytes =
