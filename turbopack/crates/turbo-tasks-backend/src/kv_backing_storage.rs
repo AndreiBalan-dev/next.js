@@ -270,6 +270,10 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
         let _span = tracing::info_span!("save snapshot", operations = operations.len()).entered();
         let mut batch = self.inner.database.write_batch()?;
 
+        // these buffers should be large, because they're temporary and re-used.
+        // From measuring a large application the largest TaskType was ~365b, so this should be big
+        // enough to trigger no resizes in the loop.
+        const INITIAL_ENCODE_BUFFER_CAPACITY: usize = 512;
         // Start organizing the updates in parallel
         match &mut batch {
             &mut WriteBatch::Concurrent(ref batch, _) => {
@@ -304,9 +308,13 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
                         |updates| {
                             let _span = _span.clone().entered();
                             let mut max_task_id = 0;
-
+                            // Re-use the same buffer across every `serialize_task_type` call in
+                            // this chunk. `ConcurrentWriteBatch::put` will copy the data out of
+                            // this buffer into smaller exact-sized vecs.
+                            let mut task_type_bytes =
+                                TurboBincodeBuffer::with_capacity(INITIAL_ENCODE_BUFFER_CAPACITY);
                             for (task_type, task_id) in updates {
-                                let hash = compute_task_type_hash(&task_type);
+                                let hash = compute_task_type_hash(&task_type, &mut task_type_bytes);
                                 let task_id: u32 = *task_id;
 
                                 batch
@@ -579,12 +587,17 @@ where
 /// This uses the existing TurboBincodeEncode implementation which is deterministic
 /// (function IDs from registry, bincode argument encoding), then hashes the result
 /// with XxHash64.
-fn compute_task_type_hash(task_type: &CachedTaskType) -> u64 {
-    let mut buffer = TurboBincodeBuffer::new();
+fn compute_task_type_hash(
+    task_type: &CachedTaskType,
+    scratch_buffer: &mut TurboBincodeBuffer,
+) -> u64 {
+    // TODO: use a custom encoder that can directly
     // This should not fail for valid task types - the encoding is deterministic
-    turbo_bincode_encode_into(task_type, &mut buffer)
+    turbo_bincode_encode_into(task_type, scratch_buffer)
         .expect("CachedTaskType encoding should not fail");
-    turbo_persistence::hash_key(&buffer.as_slice())
+    let r = turbo_persistence::hash_key(&scratch_buffer.as_slice());
+    scratch_buffer.clear();
+    r
 }
 
 type SerializedTasks = Vec<
