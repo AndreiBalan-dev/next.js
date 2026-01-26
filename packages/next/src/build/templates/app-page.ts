@@ -854,15 +854,19 @@ export async function handler(
         fallbackMode = FallbackMode.BLOCKING_STATIC_RENDER
       }
 
-      if (
+      const shouldUseFallback =
         !isMinimalMode &&
         fallbackMode !== FallbackMode.BLOCKING_STATIC_RENDER &&
         staticPathKey &&
         !didRespond &&
         !isDraftMode &&
         pageIsDynamic &&
-        (isProduction || !isPrerendered)
-      ) {
+        (isProduction || !isPrerendered) &&
+        (!isRevalidating ||
+          !previousIncrementalCacheEntry ||
+          previousIncrementalCacheEntry?.isFallback)
+
+      if (shouldUseFallback) {
         // if the page has dynamicParams: false and this pathname wasn't
         // prerendered trigger the no fallback handling
         if (
@@ -893,8 +897,8 @@ export async function handler(
               : normalizedSrcPage
 
           const fallbackRouteParams =
-            // If we're in production and we have fallback route params, then we
-            // can use the manifest fallback route params.
+            // If we're in production and we have fallback route params, always
+            // use them for the fallback shell.
             isProduction && prerenderInfo?.fallbackRouteParams
               ? createOpaqueFallbackRouteParams(
                   prerenderInfo.fallbackRouteParams
@@ -933,6 +937,46 @@ export async function handler(
 
           // Otherwise, if we did get a fallback response, we should return it.
           if (fallbackResponse) {
+            if (
+              !isMinimalMode &&
+              isRoutePPREnabled &&
+              ssgCacheKey &&
+              incrementalCache &&
+              !isOnDemandRevalidate &&
+              !isDebugFallbackShell
+            ) {
+              scheduleOnNextTick(async () => {
+                const responseCache = routeModule.getResponseCache(req)
+
+                try {
+                  await responseCache.revalidate(
+                    ssgCacheKey,
+                    incrementalCache,
+                    isRoutePPREnabled,
+                    false,
+                    (c) => {
+                      return doRender({
+                        span: c.span,
+                        // Route shell render should not use the fallback params.
+                        postponed: undefined,
+                        fallbackRouteParams: null,
+                        forceStaticRender: true,
+                      })
+                    },
+                    // We don't have a prior entry for this param-specific shell.
+                    null,
+                    hasResolved,
+                    ctx.waitUntil
+                  )
+                } catch (err) {
+                  console.error(
+                    'Error revalidating the page in the background',
+                    err
+                  )
+                }
+              })
+            }
+
             // Remove the cache control from the response to prevent it from being
             // used in the surrounding cache.
             delete fallbackResponse.cacheControl
