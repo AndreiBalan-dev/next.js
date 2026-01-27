@@ -487,6 +487,7 @@ async fn emit_star_exports_issue(source_ident: Vc<AssetIdent>, message: RcStr) -
 #[derive(Hash, Debug)]
 pub struct EsmExports {
     pub exports: BTreeMap<RcStr, EsmExport>,
+    /// Star exports that could not be (fully) expanded.
     pub star_exports: Vec<ResolvedVc<Box<dyn ModuleReference>>>,
     /// Mangled export names for this module. If Some, exports are mangled.
     /// Maps original export name → mangled (shortened) export name.
