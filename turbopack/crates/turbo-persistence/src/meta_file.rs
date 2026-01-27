@@ -416,7 +416,6 @@ impl MetaFile {
         }
 
         let mut miss_result = MetaLookupResult::RangeMiss;
-        let mut had_amqf_miss = false;
         let mut all_results: SmallVec<[LookupValue; 1]> = SmallVec::new();
 
         for entry in self.entries.iter().rev() {
@@ -425,11 +424,8 @@ impl MetaFile {
             }
             let amqf = entry.amqf(self, amqf_cache)?;
             if !amqf.contains_fingerprint(key_hash) {
-                had_amqf_miss = true;
-                continue;
-            }
-            if had_amqf_miss {
                 miss_result = MetaLookupResult::QuickFilterMiss;
+                continue;
             }
 
             let result = entry.sst(self)?.lookup(
@@ -441,7 +437,9 @@ impl MetaFile {
             )?;
 
             match result {
-                SstLookupResult::NotFound => {}
+                SstLookupResult::NotFound => {
+                    // continue searching other sst files
+                }
                 SstLookupResult::Found(values) => {
                     if !find_all {
                         // Return immediately with the first result
@@ -453,7 +451,7 @@ impl MetaFile {
             }
         }
 
-        if find_all && !all_results.is_empty() {
+        if !all_results.is_empty() {
             return Ok(MetaLookupResult::SstLookup(SstLookupResult::Found(
                 all_results,
             )));
@@ -538,17 +536,19 @@ impl MetaFile {
                     false, // find_all: batch_lookup returns first match per key
                 )?;
                 if let SstLookupResult::Found(mut values) = sst_result {
-                    // batch_lookup expects single values; take the first one
-                    if let Some(value) = values.pop() {
-                        *result = Some(value);
-                        *empty_cells -= 1;
-                        #[cfg(feature = "stats")]
-                        {
-                            lookup_result.hits += 1;
-                        }
-                        if *empty_cells == 0 {
-                            return Ok(lookup_result);
-                        }
+                    // find_all=false guarantees exactly one result
+                    debug_assert!(values.len() == 1);
+                    let Some(value) = values.pop() else {
+                        unreachable!()
+                    };
+                    *result = Some(value);
+                    *empty_cells -= 1;
+                    #[cfg(feature = "stats")]
+                    {
+                        lookup_result.hits += 1;
+                    }
+                    if *empty_cells == 0 {
+                        return Ok(lookup_result);
                     }
                 } else {
                     #[cfg(feature = "stats")]
