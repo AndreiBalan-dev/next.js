@@ -1827,6 +1827,11 @@ impl NextConfig {
     }
 
     #[turbo_tasks::function]
+    pub fn has_deployment_id(&self) -> Vc<bool> {
+        Vc::cell(self.deployment_id.is_some())
+    }
+
+    #[turbo_tasks::function]
     pub fn cache_kinds(&self) -> Vc<CacheKinds> {
         let mut cache_kinds = CacheKinds::default();
 
