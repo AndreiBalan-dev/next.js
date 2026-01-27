@@ -65,6 +65,7 @@ import {
 import { decodePathParams } from '../lib/router-utils/decode-path-params'
 import { removeTrailingSlash } from '../../shared/lib/router/utils/remove-trailing-slash'
 import { isInterceptionRouteRewrite } from '../../lib/generate-interception-routes-rewrites'
+import { loadManifestFileFromRelativePath } from '../load-manifest.external'
 
 /**
  * RouteModuleOptions is the options that are passed to the route module, other
@@ -181,7 +182,7 @@ export abstract class RouteModule<
     srcPage: string,
     projectDir?: string
   ): {
-    buildId: string
+    buildId: string | undefined
     buildManifest: BuildManifest
     fallbackBuildManifest: BuildManifest
     routesManifest: DeepReadonly<DevRoutesManifest>
@@ -204,7 +205,7 @@ export abstract class RouteModule<
         str ? JSON.parse(str) : undefined
 
       result = {
-        buildId: process.env.__NEXT_BUILD_ID || '',
+        buildId: process.env.__NEXT_BUILD_ID,
         buildManifest: self.__BUILD_MANIFEST as any,
         fallbackBuildManifest: {} as any,
         reactLoadableManifest: maybeJSONParse(self.__REACT_LOADABLE_MANIFEST),
@@ -349,11 +350,11 @@ export abstract class RouteModule<
             }),
         this.isDev
           ? 'development'
-          : loadManifestFromRelativePath<any>({
+          : loadManifestFileFromRelativePath({
               projectDir,
               distDir: this.distDir,
               manifest: BUILD_ID_FILE,
-              skipParse: true,
+              handleMissing: true,
             }),
         loadManifestFromRelativePath<any>({
           projectDir,
@@ -562,7 +563,7 @@ export abstract class RouteModule<
     }
   ): Promise<
     | {
-        buildId: string
+        buildId: string | undefined
         deploymentId: string
         locale?: string
         locales?: readonly string[]
