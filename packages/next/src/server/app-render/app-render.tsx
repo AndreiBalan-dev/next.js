@@ -234,7 +234,7 @@ export type GenerateFlight = typeof generateDynamicFlightRenderResult
 
 export type AppSharedContext = {
   buildId: string | undefined
-  deploymentId: string
+  deploymentId: string | undefined
 }
 
 export type AppRenderContext = {
@@ -2415,7 +2415,7 @@ export const renderToHTMLOrFlight: AppPageRender = (
     renderOpts,
     // @TODO move to workUnitStore of type Request
     isPrefetchRequest,
-    buildId: sharedContext.deploymentId,
+    buildId: sharedContext.buildId || sharedContext.deploymentId || '',
     previouslyRevalidatedTags,
     nonce,
   })
