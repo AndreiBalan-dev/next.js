@@ -10,8 +10,8 @@ use anyhow::{Ok, Result};
 use parking_lot::Mutex;
 use smallvec::SmallVec;
 use turbo_persistence::{
-    ArcSlice, CompactConfig, DbConfig, FamilyConfig, KeyBase, StoreKey, TurboPersistence,
-    ValueBuffer,
+    ArcSlice, CompactConfig, DbConfig, DeduplicationMode, FamilyConfig, KeyBase, StoreKey,
+    TurboPersistence, ValueBuffer,
 };
 use turbo_tasks::{JoinHandle, message_queue::TimingEvent, spawn, turbo_tasks};
 
@@ -60,9 +60,12 @@ impl TurboKeyValueDatabase {
         // TaskCache (family 3): Index with collision semantics - maximize entries per file
         // to minimize files to scan during get_multiple lookups.
         // Use usize::MAX to effectively disable entry limit; data threshold controls file size.
+        // Use ByKeyAndValue deduplication to preserve entries with hash collisions (same key,
+        // different value) while still deduplicating true duplicates.
         config.family_configs[KeySpace::TaskCache as usize] = FamilyConfig {
             max_entries_per_initial_file: usize::MAX,
             max_entries_per_compacted_file: usize::MAX,
+            deduplication_mode: DeduplicationMode::ByKeyAndValue,
             ..Default::default()
         };
 

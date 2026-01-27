@@ -33,6 +33,19 @@ pub const KEY_BLOCK_AVG_SIZE: usize = 16 * 1024;
 pub const VALUE_BLOCK_CACHE_SIZE: u64 = 300 * 1024 * 1024;
 pub const VALUE_BLOCK_AVG_SIZE: usize = 132000;
 
+/// How to deduplicate entries during compaction.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DeduplicationMode {
+    /// Keep only the newest entry for each key (default LSM behavior).
+    /// When multiple entries have the same key, only the last one is retained.
+    #[default]
+    ByKeyOnly,
+    /// Keep entries that differ by key OR value (for hash-collision-tolerant keyspaces).
+    /// Only drops entries that are true duplicates (same key AND same value).
+    /// Use this when a keyspace may contain different values that hash to the same key.
+    ByKeyAndValue,
+}
+
 /// Configuration for a single family's file limits.
 ///
 /// Controls when SST files are split during writes and compaction.
@@ -47,6 +60,8 @@ pub struct FamilyConfig {
     pub max_entries_per_compacted_file: usize,
     /// Data size threshold for compacted SST files (bytes)
     pub data_threshold_per_compacted_file: usize,
+    /// How to handle duplicate keys during compaction
+    pub deduplication_mode: DeduplicationMode,
 }
 
 impl Default for FamilyConfig {
@@ -56,6 +71,7 @@ impl Default for FamilyConfig {
             data_threshold_per_initial_file: DATA_THRESHOLD_PER_INITIAL_FILE,
             max_entries_per_compacted_file: MAX_ENTRIES_PER_COMPACTED_FILE,
             data_threshold_per_compacted_file: DATA_THRESHOLD_PER_COMPACTED_FILE,
+            deduplication_mode: DeduplicationMode::default(),
         }
     }
 }

@@ -25,8 +25,8 @@ use crate::{
     compaction::selector::{Compactable, get_merge_segments},
     compression::decompress_into_arc,
     constants::{
-        AMQF_AVG_SIZE, AMQF_CACHE_SIZE, DbConfig, KEY_BLOCK_AVG_SIZE, KEY_BLOCK_CACHE_SIZE,
-        VALUE_BLOCK_AVG_SIZE, VALUE_BLOCK_CACHE_SIZE,
+        AMQF_AVG_SIZE, AMQF_CACHE_SIZE, DbConfig, DeduplicationMode, KEY_BLOCK_AVG_SIZE,
+        KEY_BLOCK_CACHE_SIZE, VALUE_BLOCK_AVG_SIZE, VALUE_BLOCK_CACHE_SIZE,
     },
     key::{StoreKey, hash_key},
     lookup_entry::{LookupEntry, LookupValue},
@@ -1070,12 +1070,23 @@ impl<S: ParallelScheduler, const FAMILIES: usize> TurboPersistence<S, FAMILIES> 
                                 }
                                 let mut used_collector = Collector::default();
                                 let mut unused_collector = Collector::default();
+                                let family_config = &self.config.family_configs[family as usize];
+
                                 for entry in iter {
                                     let entry = entry?;
 
-                                    // Remove duplicates
+                                    // Remove duplicates based on family's deduplication mode
                                     if let Some(current) = current.take() {
-                                        if current.key != entry.key {
+                                        let is_duplicate = match family_config.deduplication_mode {
+                                            DeduplicationMode::ByKeyOnly => {
+                                                current.key == entry.key
+                                            }
+                                            DeduplicationMode::ByKeyAndValue => {
+                                                current.key == entry.key
+                                                    && current.value.eq_for_dedup(&entry.value)
+                                            }
+                                        };
+                                        if !is_duplicate {
                                             let is_used =
                                                 used_key_hashes[family as usize].iter().any(
                                                     |amqf| amqf.contains_fingerprint(current.hash),
@@ -1091,8 +1102,6 @@ impl<S: ParallelScheduler, const FAMILIES: usize> TurboPersistence<S, FAMILIES> 
                                             collector.total_key_size += key_size;
                                             collector.total_value_size += value_size;
 
-                                            let family_config =
-                                                &self.config.family_configs[family as usize];
                                             if collector.total_key_size + collector.total_value_size
                                                 > family_config.data_threshold_per_compacted_file
                                                 || collector.entries.len()
