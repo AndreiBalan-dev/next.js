@@ -374,13 +374,8 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
                         items = task_cache_updates.iter().map(|m| m.len()).sum::<usize>()
                     )
                     .entered();
-                    // Re-use the same buffer across every `serialize_task_type` call.
-                    // `ConcurrentWriteBatch::put` will copy the data out of this buffer into
-                    // smaller exact-sized vecs.
-                    let mut task_type_bytes =
-                        TurboBincodeBuffer::with_capacity(INITIAL_ENCODE_BUFFER_CAPACITY);
                     for (task_type, task_id) in task_cache_updates.into_iter().flatten() {
-                        let hash = compute_task_type_hash(&task_type, &mut task_type_bytes);
+                        let hash = compute_task_type_hash(&task_type);
                         let task_id = *task_id;
 
                         batch
@@ -426,7 +421,7 @@ impl<T: KeyValueDatabase + Send + Sync + 'static> BackingStorageSealed
             tx: &D::ReadTransaction<'_>,
             task_type: &CachedTaskType,
         ) -> Result<SmallVec<[TaskId; 1]>> {
-            let hash = compute_task_type_hash(task_type, &mut TurboBincodeBuffer::new());
+            let hash = compute_task_type_hash(task_type);
             let buffers = database.get_multiple(tx, KeySpace::TaskCache, &hash.to_le_bytes())?;
 
             let mut task_ids = SmallVec::with_capacity(buffers.len());
