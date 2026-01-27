@@ -114,6 +114,7 @@ impl EcmascriptChunkPlaceable for NextServerUtilityModule {
             EsmExports {
                 exports,
                 star_exports: vec![module_reference],
+                mangled_names: None,
             }
             .resolved_cell(),
         )
