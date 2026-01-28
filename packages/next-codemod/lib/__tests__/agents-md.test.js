@@ -1,7 +1,12 @@
 /* global jest */
 jest.autoMockOff()
 
-const { injectIntoClaudeMd, buildDocTree } = require('../agents-md')
+const path = require('path')
+const {
+  injectIntoClaudeMd,
+  buildDocTree,
+  getNextjsVersion,
+} = require('../agents-md')
 
 describe('agents-md', () => {
   describe('injectIntoClaudeMd', () => {
@@ -137,6 +142,37 @@ Some content after.`)
       expect(tree[1].name).toBe('z-section')
       expect(tree[0].files[0].relativePath).toBe('a-section/a-file.mdx')
       expect(tree[0].files[1].relativePath).toBe('a-section/z-file.mdx')
+    })
+  })
+
+  describe('getNextjsVersion', () => {
+    const fixturesDir = path.join(__dirname, 'fixtures/agents-md')
+
+    it('returns the installed Next.js version from node_modules', () => {
+      const fixture = path.join(fixturesDir, 'next-specific-version')
+      const result = getNextjsVersion(fixture)
+
+      expect(result.version).toBe('15.4.0')
+      expect(result.error).toBeUndefined()
+    })
+
+    it('returns actual installed version, not the tag from package.json', () => {
+      // package.json has "next": "latest", but node_modules has version "16.0.0"
+      const fixture = path.join(fixturesDir, 'next-tag')
+      const result = getNextjsVersion(fixture)
+
+      // Should return the actual installed version, not "latest"
+      expect(result.version).toBe('16.0.0')
+      expect(result.error).toBeUndefined()
+    })
+
+    it('returns error when Next.js is not installed', () => {
+      // Use a directory where next is not installed
+      const nonNextDir = '/tmp'
+      const result = getNextjsVersion(nonNextDir)
+
+      expect(result.version).toBeNull()
+      expect(result.error).toBe('Next.js is not installed in this project.')
     })
   })
 })
