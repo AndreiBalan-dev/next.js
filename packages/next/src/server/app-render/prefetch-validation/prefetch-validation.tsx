@@ -36,15 +36,18 @@ import {
 } from './utils'
 import { createDebugChannel } from '../debug-channel-server'
 
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { createFromNodeStream } from 'react-server-dom-webpack/client'
+// eslint-disable-next-line import/no-extraneous-dependencies
+import { renderToReadableStream } from 'react-server-dom-webpack/server'
+
 type StageChunks = Record<SegmentStage, Uint8Array[]>
 
-type ClientReferenceManifest = ReturnType<
-  (typeof import('../manifests-singleton'))['getClientReferenceManifest']
->
-
-const { createFromNodeStream } =
-  // eslint-disable-next-line import/no-extraneous-dependencies
-  require('react-server-dom-webpack/client') as typeof import('react-server-dom-webpack/client')
+// FIXME: this causes typescript errors related to 'flight-client-entry-plugin.d.ts'
+// type ClientReferenceManifest = ReturnType<
+//   (typeof import('../manifests-singleton'))['getClientReferenceManifest']
+// >
+type ClientReferenceManifest = Record<string, any>
 
 const filterStackFrame =
   process.env.NODE_ENV !== 'production'
@@ -160,8 +163,7 @@ export async function collectStagedSegmentData(
   debugChunks: Uint8Array[] | null,
   startTime: number,
   hasRuntimePrefetch: boolean,
-  clientReferenceManifest: ClientReferenceManifest,
-  renderToReadableStream: typeof import('react-server-dom-webpack/server').renderToReadableStream
+  clientReferenceManifest: ClientReferenceManifest
 ) {
   const debugChannelAbortController = new AbortController()
   const debugStream = debugChunks
@@ -377,7 +379,6 @@ function decodeFromChunks<T>(
 //===================================
 
 export async function createCombinedPayloadStream(
-  renderToReadableStream: typeof import('react-server-dom-webpack/server').renderToReadableStream,
   initialRSCPayload: InitialRSCPayload,
   cache: ValidationSegmentCache,
   validationRouteTree: ValidationRouteTree,

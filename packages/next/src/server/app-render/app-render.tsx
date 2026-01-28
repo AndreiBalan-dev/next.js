@@ -4160,8 +4160,7 @@ async function validatePrefetchConfigs(
     debugChunks,
     startTime,
     hasRuntimePrefetch,
-    clientReferenceManifest,
-    ctx.componentMod.renderToReadableStream
+    clientReferenceManifest
   )
 
   // {
@@ -4315,7 +4314,6 @@ async function validatePrefetchConfig(
   const usedSegmentKinds = new Set<ValidationSegmentStage>()
   const { stream: serverStream, debugStream } =
     await createCombinedPayloadStream(
-      ctx.componentMod.renderToReadableStream,
       initialRscPayload,
       cache,
       routeTree,
