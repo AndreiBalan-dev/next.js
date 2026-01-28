@@ -546,8 +546,11 @@ async function readManifest<T extends object>(filePath: string): Promise<T> {
 
 async function writePrerenderManifest(
   distDir: string,
-  manifest: DeepReadonly<PrerenderManifest>
+  manifest: PrerenderManifest
 ): Promise<void> {
+  // Sort for deterministic outputs
+  manifest.routes = sortObjectByKey(manifest.routes)
+  manifest.dynamicRoutes = sortObjectByKey(manifest.dynamicRoutes)
   await writeManifest(path.join(distDir, PRERENDER_MANIFEST), manifest)
 }
 
@@ -4409,4 +4412,16 @@ function getErrorCodeForTelemetry(err: unknown) {
   }
 
   return 'Unknown'
+}
+
+function sortObjectByKey(obj: Record<string, any>) {
+  return Object.keys(obj)
+    .sort()
+    .reduce(
+      (acc, key) => {
+        acc[key] = obj[key]
+        return acc
+      },
+      {} as Record<string, any>
+    )
 }
