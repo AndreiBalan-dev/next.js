@@ -2008,7 +2008,7 @@ export default async function build(
                 : []),
               // When deploymentId is available, headers are used for softnavs, and the build id
               // isn't needed anymore.
-              ...(config.deploymentId ? [BUILD_ID_FILE] : []),
+              ...(!config.deploymentId ? [BUILD_ID_FILE] : []),
               path.join(SERVER_DIRECTORY, NEXT_FONT_MANIFEST + '.js'),
               path.join(SERVER_DIRECTORY, NEXT_FONT_MANIFEST + '.json'),
               SERVER_FILES_MANIFEST + '.json',
