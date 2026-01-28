@@ -2,11 +2,15 @@ import { nextTestSetup } from 'e2e-utils'
 import { waitForNoErrorToast } from '../../../lib/next-test-utils'
 
 describe('instant validation', () => {
-  const { next, skipped } = nextTestSetup({
+  const { next, skipped, isNextDev } = nextTestSetup({
     files: __dirname,
     skipDeployment: true,
   })
   if (skipped) return
+  if (!isNextDev) {
+    it.skip('Only implemented in dev')
+    return
+  }
 
   it('valid - static prefetch - suspense around runtime and dynamic', async () => {
     const browser = await next.browser('/static/suspense-around-dynamic')
