@@ -3718,36 +3718,38 @@ async function spawnStaticShellValidationInDev(
   const { staticChunks, runtimeChunks, dynamicChunks } = accumulatedChunks
 
   // If we have unstable_prefetch configs, validate them.
-  const segmentsWithConfig = await findSegmentsWithPrefetchConfig(loaderTree)
-  if (segmentsWithConfig.length > 0) {
-    // Make sure that all client modules needed to SSR a fully resolved page are warmed
-    await warmupClientModulesForStagedValidationInDev(
-      dynamicChunks,
-      dynamicChunks,
-      rootParams,
-      fallbackRouteParams,
-      allowEmptyStaticShell,
-      ctx
-    )
-
-    const prefetchConfigsResult = await validatePrefetchConfigs(
-      accumulatedChunks,
-      debugChunks,
-      startTime,
-      rootParams,
-      fallbackRouteParams,
-      allowEmptyStaticShell,
-      ctx,
-      hmrRefreshHash
-    )
-    if (prefetchConfigsResult.length > 0) {
-      console.log(
-        `validation - ${prefetchConfigsResult.length} errors from prefetch configs`
+  if (renderOpts.experimental.instantValidation ?? true) {
+    const segmentsWithConfig = await findSegmentsWithPrefetchConfig(loaderTree)
+    if (segmentsWithConfig.length > 0) {
+      // Make sure that all client modules needed to SSR a fully resolved page are warmed
+      await warmupClientModulesForStagedValidationInDev(
+        dynamicChunks,
+        dynamicChunks,
+        rootParams,
+        fallbackRouteParams,
+        allowEmptyStaticShell,
+        ctx
       )
-      return logMessagesAndSendErrorsToBrowser(prefetchConfigsResult, ctx)
+
+      const prefetchConfigsResult = await validatePrefetchConfigs(
+        accumulatedChunks,
+        debugChunks,
+        startTime,
+        rootParams,
+        fallbackRouteParams,
+        allowEmptyStaticShell,
+        ctx,
+        hmrRefreshHash
+      )
+      if (prefetchConfigsResult.length > 0) {
+        console.log(
+          `validation - ${prefetchConfigsResult.length} errors from prefetch configs`
+        )
+        return logMessagesAndSendErrorsToBrowser(prefetchConfigsResult, ctx)
+      }
+      // TODO: can we just bypass shell validation if we perform prefetch validation?
+      return
     }
-    // TODO: can we just bypass shell validation if we perform prefetch validation?
-    return
   }
 
   // First we warmup SSR with the runtime chunks. This ensures that when we do
