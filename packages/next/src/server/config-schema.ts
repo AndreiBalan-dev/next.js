@@ -166,6 +166,7 @@ const zTurbopackConfig: zod.ZodType<TurbopackOptions> = z.strictObject({
 export const experimentalSchema = {
   adapterPath: z.string().optional(),
   useSkewCookie: z.boolean().optional(),
+  instantValidation: z.boolean().optional(),
   after: z.boolean().optional(),
   appNavFailHandling: z.boolean().optional(),
   preloadEntriesOnStart: z.boolean().optional(),

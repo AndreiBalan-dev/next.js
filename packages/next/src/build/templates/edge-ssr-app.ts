@@ -166,6 +166,7 @@ async function requestHandler(
         maxPostponedStateSizeBytes: parseMaxPostponedStateSize(
           nextConfig.experimental.maxPostponedStateSize
         ),
+        instantValidation: nextConfig.experimental.instantValidation,
       },
 
       incrementalCache: await pageRouteModule.getIncrementalCache(

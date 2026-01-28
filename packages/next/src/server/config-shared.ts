@@ -282,6 +282,7 @@ export interface LoggingConfig {
 export interface ExperimentalConfig {
   adapterPath?: string
   useSkewCookie?: boolean
+  instantValidation?: boolean
   /** @deprecated use top-level `cacheHandlers` instead */
   cacheHandlers?: NextConfig['cacheHandlers']
   multiZoneDraftMode?: boolean
@@ -1530,6 +1531,7 @@ export const defaultConfig = Object.freeze({
   experimental: {
     adapterPath: process.env.NEXT_ADAPTER_PATH || undefined,
     useSkewCookie: false,
+    instantValidation: true,
     cssChunking: true,
     multiZoneDraftMode: false,
     appNavFailHandling: false,
@@ -1713,6 +1715,7 @@ export interface NextConfigRuntime {
     | 'runtimeServerDeploymentId'
     | 'maxPostponedStateSize'
     | 'devCacheControlNoCache'
+    | 'instantValidation'
   > & {
     // Pick on @internal fields generates invalid .d.ts files
     /** @internal */
@@ -1776,6 +1779,7 @@ export function getNextConfigRuntime(
         runtimeServerDeploymentId: ex.runtimeServerDeploymentId,
         maxPostponedStateSize: ex.maxPostponedStateSize,
         devCacheControlNoCache: ex.devCacheControlNoCache,
+        instantValidation: ex.instantValidation,
 
         trustHostHeader: ex.trustHostHeader,
         isExperimentalCompile: ex.isExperimentalCompile,

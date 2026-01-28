@@ -514,6 +514,7 @@ async function exportAppImpl(
       maxPostponedStateSizeBytes: parseMaxPostponedStateSize(
         nextConfig.experimental.maxPostponedStateSize
       ),
+      instantValidation: nextConfig.experimental.instantValidation,
     },
     reactMaxHeadersLength: nextConfig.reactMaxHeadersLength,
     hasReadableErrorStacks:

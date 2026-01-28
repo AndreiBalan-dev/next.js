@@ -3717,6 +3717,7 @@ async function spawnStaticShellValidationInDev(
   const accumulatedChunks = await accumulatedChunksPromise
   const { staticChunks, runtimeChunks, dynamicChunks } = accumulatedChunks
 
+  // If we have unstable_prefetch configs, validate them.
   const segmentsWithConfig = await findSegmentsWithPrefetchConfig(loaderTree)
   if (segmentsWithConfig.length > 0) {
     // Make sure that all client modules needed to SSR a fully resolved page are warmed

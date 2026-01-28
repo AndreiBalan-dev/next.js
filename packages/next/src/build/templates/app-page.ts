@@ -704,6 +704,7 @@ export async function handler(
             maxPostponedStateSizeBytes: parseMaxPostponedStateSize(
               nextConfig.experimental.maxPostponedStateSize
             ),
+            instantValidation: nextConfig.experimental.instantValidation,
           },
 
           waitUntil: ctx.waitUntil,
