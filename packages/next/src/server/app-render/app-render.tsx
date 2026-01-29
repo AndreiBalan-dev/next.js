@@ -4339,10 +4339,6 @@ async function validatePrefetchConfig(
 
   const clientReferenceManifest = getClientReferenceManifest()
 
-  console.log(
-    'creating payload...',
-    useRuntimeStageForPartialSegments ? '(forcing runtime)' : ''
-  )
   const usedSegmentKinds = new Set<ValidationSegmentStage>()
   const { stream: serverStream, debugStream } =
     await createCombinedPayloadStream(
@@ -4372,8 +4368,6 @@ async function validatePrefetchConfig(
   const dynamicHoleKind = usedSegmentKinds.has(RenderStage.Static)
     ? DynamicHoleKind.Runtime
     : DynamicHoleKind.Dynamic
-
-  console.log('created payload')
 
   const prerender = (
     require('react-dom/static') as typeof import('react-dom/static')
