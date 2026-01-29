@@ -379,29 +379,17 @@ function decodeFromChunks<T>(
 //===================================
 
 export async function createCombinedPayloadStream(
-  initialRSCPayload: InitialRSCPayload,
-  cache: ValidationSegmentCache,
-  validationRouteTree: ValidationRouteTree,
-  navigationParent: SegmentPath,
+  createPayload: (
+    extraChunksReleaseSignal: AbortSignal
+  ) => Promise<InitialRSCPayload>,
   signal: AbortSignal,
   clientReferenceManifest: ClientReferenceManifest,
   startTime: number,
-  stageEndTimes: StageEndTimes,
-  isDebugChannelEnabled: boolean,
-  usedSegmentKinds: Set<SegmentStage>
+  isDebugChannelEnabled: boolean
 ) {
   const extraChunksAbortController = new AbortController()
 
-  const payload = await createCombinedPayload(
-    initialRSCPayload,
-    cache,
-    validationRouteTree,
-    navigationParent,
-    extraChunksAbortController.signal,
-    clientReferenceManifest,
-    stageEndTimes,
-    usedSegmentKinds
-  )
+  const payload = await createPayload(extraChunksAbortController.signal)
 
   // Collect all the chunks so that we're not dependent on timing of the above render.
 
@@ -496,7 +484,7 @@ export async function createCombinedPayloadStream(
   }
 }
 
-async function createCombinedPayload(
+export async function createCombinedPayload(
   initialRSCPayload: InitialRSCPayload,
   cache: ValidationSegmentCache,
   validationRouteTree: ValidationRouteTree,
@@ -504,6 +492,7 @@ async function createCombinedPayload(
   signal: AbortSignal,
   clientReferenceManifest: ClientReferenceManifest,
   stageEndTimes: StageEndTimes,
+  useRuntimeStageForPartialSegments: boolean,
   usedSegmentKinds: Set<SegmentStage>
 ): Promise<InitialRSCPayload> {
   const { head, flightRouterState } = getRootDataFromPayload(initialRSCPayload)
@@ -514,6 +503,7 @@ async function createCombinedPayload(
     signal,
     clientReferenceManifest,
     stageEndTimes,
+    useRuntimeStageForPartialSegments,
     usedSegmentKinds
   )
   const combinedRSCPayload: InitialRSCPayload = {
@@ -801,6 +791,7 @@ function createValidationSeedData(
   signal: AbortSignal,
   clientReferenceManifest: ClientReferenceManifest,
   stageEndTimes: StageEndTimes,
+  useRuntimeStageForPartialSegments: boolean,
   usedSegmentKinds: Set<SegmentStage>
 ): Promise<CacheNodeSeedData> {
   type TraversalState =
@@ -847,7 +838,12 @@ function createValidationSeedData(
             nextState = { kind: 'new-tree', isInsideRuntimePrefetch: true }
           } else {
             // No runtime prefetch config. Continue using static prefetching.
-            stage = RenderStage.Static
+            //
+            // If the initial validation failed, we retry the render and use the runtime stage
+            // for static segments. This lets us discriminate runtime and dynamic holes.
+            stage = useRuntimeStageForPartialSegments
+              ? RenderStage.Runtime
+              : RenderStage.Static
             nextState = state
           }
         } else {

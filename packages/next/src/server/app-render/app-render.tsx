@@ -4230,7 +4230,7 @@ async function validatePrefetchConfigs(
         `  from '${navigationParent}/*' ('${getConventionPath(navigationParent)}')\n` +
         `  to   '${workAsyncStorage.getStore()!.route}'`
     )
-    const results = await validatePrefetchConfig(
+    const initialResults = await validatePrefetchConfig(
       initialRscPayload,
       cache,
       startTime,
@@ -4241,17 +4241,44 @@ async function validatePrefetchConfigs(
       ctx,
       hmrRefreshHash,
       validationRouteTree,
-      navigationParent
+      navigationParent,
+      false // use static stage for static segments
     )
-    console.log(
-      results.length === 0
-        ? `  ✅ Validation successful`
-        : `  ❌ Validation failed (${results.length} errors)`
-    )
+    if (initialResults.errors.length === 0) {
+      console.log(`  ✅ Validation successful`)
+    }
 
-    if (results.length > 0) {
-      // TODO: communicate which segment caused this?
-      return results
+    if (initialResults.errors.length > 0) {
+      if (initialResults.dynamicHoleKind !== DynamicHoleKind.Dynamic) {
+        const runtimeResults = await validatePrefetchConfig(
+          initialRscPayload,
+          cache,
+          startTime,
+          stageEndTimes,
+          rootParams,
+          fallbackRouteParams,
+          allowEmptyStaticShell,
+          ctx,
+          hmrRefreshHash,
+          validationRouteTree,
+          navigationParent,
+          true // use runtime stage for static segments instead
+        )
+        if (runtimeResults.errors.length > 0) {
+          // The errors remained in the runtime stage, so they were caused by a dynamic access.
+          console.log(
+            `  ❌ Validation failed after runtime retry (${runtimeResults.errors.length} errors)`
+          )
+          return runtimeResults.errors
+        }
+        // Otherwise, the errors disappeared in the runtime stage, so they were caused
+        // by a runtime access. report the original errors.
+      }
+
+      console.log(
+        `  ❌ Validation failed (${initialResults.errors.length} errors)`
+      )
+      return initialResults.errors
     }
   }
 
@@ -4269,11 +4296,13 @@ async function validatePrefetchConfig(
   ctx: AppRenderContext,
   hmrRefreshHash: string | undefined,
   routeTree: ValidationRouteTree,
-  navigationParent: ValidationSegmentPath
-): Promise<Array<unknown>> {
+  navigationParent: ValidationSegmentPath,
+  useRuntimeStageForPartialSegments: boolean
+): Promise<{ dynamicHoleKind: DynamicHoleKind; errors: Array<unknown> }> {
   const { implicitTags, nonce, workStore } = ctx
   const isDebugChannelEnabled = !!ctx.renderOpts.setReactDebugChannel
-  const { createCombinedPayloadStream } = ctx.componentMod.prefetchValidation!
+  const { createCombinedPayload, createCombinedPayloadStream } =
+    ctx.componentMod.prefetchValidation!
 
   const clientDynamicTracking = createDynamicTrackingState(
     false //isDebugDynamicAccesses
@@ -4310,31 +4339,39 @@ async function validatePrefetchConfig(
 
   const clientReferenceManifest = getClientReferenceManifest()
 
-  console.log('creating payload...')
+  console.log(
+    'creating payload...',
+    useRuntimeStageForPartialSegments ? '(forcing runtime)' : ''
+  )
   const usedSegmentKinds = new Set<ValidationSegmentStage>()
   const { stream: serverStream, debugStream } =
     await createCombinedPayloadStream(
-      initialRscPayload,
-      cache,
-      routeTree,
-      navigationParent,
+      (extraChunksReleaseSignal) =>
+        createCombinedPayload(
+          initialRscPayload,
+          cache,
+          routeTree,
+          navigationParent,
+          extraChunksReleaseSignal,
+          clientReferenceManifest,
+          stageEndTimes,
+          useRuntimeStageForPartialSegments,
+          usedSegmentKinds
+        ),
       clientReactController.signal, // release chunks before the abort
       clientReferenceManifest,
       startTime,
-      stageEndTimes,
-      isDebugChannelEnabled,
-      usedSegmentKinds
+      isDebugChannelEnabled
     )
 
-  // If we didn't include any static segments, then all holes must come from
-  // dynamic data like `connection()`, not
-  // not runtime data.
-  // TODO(prefetch-validation): Discriminated error message if static segments are included
-  const dynamicHoleKind =
-    usedSegmentKinds.has(RenderStage.Runtime) &&
-    !usedSegmentKinds.has(RenderStage.Static)
-      ? DynamicHoleKind.Dynamic
-      : DynamicHoleKind.Unknown
+  // If we have static segments, we don't know if the error comes from a runtime or dynamic access.
+  // In that case, we report messages as if the failure is a runtime access.
+  // if we get errors, we'll retry this validation, forcing all the static segements into runtime stage.
+  // If the error disappears in the runtime stage, then we'll use the original runtime message.
+  // If it doesn't disappears, it has to come from a dynamic access, so we'll use the message from the retry.
+  const dynamicHoleKind = usedSegmentKinds.has(RenderStage.Static)
+    ? DynamicHoleKind.Runtime
+    : DynamicHoleKind.Dynamic
 
   console.log('created payload')
 
@@ -4429,7 +4466,7 @@ async function validatePrefetchConfig(
       preludeIsEmpty ? PreludeState.Empty : PreludeState.Full,
       dynamicValidation
     )
-    return reasons
+    return { dynamicHoleKind, errors: reasons } as const
   } catch (thrownValue) {
     // Even if the root errors we still want to report any cache components errors
     // that were discovered before the root errored.
@@ -4446,7 +4483,7 @@ async function validatePrefetchConfig(
       )
     }
 
-    return errors
+    return { dynamicHoleKind, errors }
   }
 }
 

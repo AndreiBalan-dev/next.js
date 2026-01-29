@@ -767,9 +767,7 @@ export enum DynamicHoleKind {
   /** We know that this hole is caused by runtime data. */
   Runtime = 1,
   /** We know that this hole is caused by dynamic data. */
-  Dynamic = 3,
-  /** We don't know if this hole is caused by dynamic or runtime data. */
-  Unknown = 2,
+  Dynamic = 2,
 }
 
 export function trackDynamicHoleInNavigation(
@@ -787,9 +785,7 @@ export function trackDynamicHoleInNavigation(
     const usageDescription =
       kind === DynamicHoleKind.Runtime
         ? `Runtime data such as \`cookies()\`, \`headers()\`, \`params\`, or \`searchParams\` was accessed inside \`generateMetadata\` or you have file-based metadata such as icons that depend on dynamic params segments.`
-        : kind === DynamicHoleKind.Dynamic
-          ? `Uncached data or \`connection()\` was accessed inside \`generateMetadata\`.`
-          : `Dynamic or Runtime data was accessed inside \`generateMetadata\`.`
+        : `Uncached data or \`connection()\` was accessed inside \`generateMetadata\`.`
     const message = `Route "${workStore.route}": ${usageDescription} Except for this instance, the page would have been entirely prerenderable which may have been the intended behavior. See more info here: https://nextjs.org/docs/messages/next-prerender-dynamic-metadata`
     const error = createErrorWithComponentOrOwnerStack(message, componentStack)
     dynamicValidation.dynamicMetadata = error
@@ -799,9 +795,7 @@ export function trackDynamicHoleInNavigation(
     const usageDescription =
       kind === DynamicHoleKind.Runtime
         ? `Runtime data such as \`cookies()\`, \`headers()\`, \`params\`, or \`searchParams\` was accessed inside \`generateViewport\`.`
-        : kind === DynamicHoleKind.Dynamic
-          ? `Uncached data or \`connection()\` was accessed inside \`generateViewport\`.`
-          : `Dynamic or Runtime data was accessed inside \`generateViewport\`.`
+        : `Uncached data or \`connection()\` was accessed inside \`generateViewport\`.`
     const message = `Route "${workStore.route}": ${usageDescription} This delays the entire page from rendering, resulting in a slow user experience. Learn more: https://nextjs.org/docs/messages/next-prerender-dynamic-viewport`
     const error = createErrorWithComponentOrOwnerStack(message, componentStack)
     dynamicValidation.dynamicErrors.push(error)
@@ -849,9 +843,7 @@ export function trackDynamicHoleInNavigation(
   const usageDescription =
     kind === DynamicHoleKind.Runtime
       ? `Runtime data such as \`cookies()\`, \`headers()\`, \`params\`, or \`searchParams\` was accessed outside of \`<Suspense>\`.`
-      : kind === DynamicHoleKind.Dynamic
-        ? `Uncached data or \`connection()\` was accessed outside of \`<Suspense>\`.`
-        : `Dynamic or Runtime data  was accessed outside of \`<Suspense>\`.`
+      : `Uncached data or \`connection()\` was accessed outside of \`<Suspense>\`.`
   const message = `Route "${workStore.route}": ${usageDescription} This delays the entire page from rendering, resulting in a slow user experience. Learn more: https://nextjs.org/docs/messages/blocking-route`
   const error = createErrorWithComponentOrOwnerStack(message, componentStack)
   dynamicValidation.dynamicErrors.push(error)

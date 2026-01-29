@@ -7,10 +7,8 @@ export default async function Page({
 }) {
   return (
     <main>
-      <div>
-        <p>Params need a suspense boundary when runtime-prefetched:</p>
-        <Runtime params={params} />
-      </div>
+      <p>Params need a suspense boundary when statically prefetched.</p>
+      <Runtime params={params} />
     </main>
   )
 }

@@ -1,13 +1,13 @@
-import { connection } from 'next/server'
+import { cookies } from 'next/headers'
 
 export const unstable_prefetch = { mode: 'static' }
 
 export default async function Page() {
-  await connection()
+  await cookies()
   return (
     <main>
       <p>
-        For a statically prefetchable page, Dynamic content needs a Suspense
+        For a statically prefetchable page, Runtime content needs a Suspense
         boundary, but it's missing here, so we should error
       </p>
     </main>
