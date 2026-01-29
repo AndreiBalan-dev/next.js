@@ -3345,6 +3345,19 @@ export default async function build(
                     ? 404
                     : meta.status
 
+                const canUseStaticPrefetchDataRoute =
+                  isRoutePPREnabled &&
+                  metadata?.postponed == null &&
+                  dataRoute &&
+                  existsSync(
+                    path.join(
+                      distDir,
+                      'server',
+                      'app',
+                      dataRoute.replace(/^\//, '')
+                    )
+                  )
+
                 prerenderManifest.routes[route.pathname] = {
                   initialStatus: status,
                   initialHeaders: meta.headers,
@@ -3359,7 +3372,9 @@ export default async function build(
                   initialExpireSeconds: cacheControl.expire,
                   srcRoute: page,
                   dataRoute,
-                  prefetchDataRoute: undefined,
+                  prefetchDataRoute: canUseStaticPrefetchDataRoute
+                    ? dataRoute
+                    : undefined,
                   allowHeader: ALLOWED_HEADERS,
                 }
               } else {
